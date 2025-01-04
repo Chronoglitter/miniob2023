@@ -4,9 +4,14 @@
 ./deps/jsoncpp
 ./deps/benchmark
 .vscode
-!.vscode/tasks.json
-!.vscode/launch.json
-.VSCodeCounter/*
+*.log*
+*.btree
+clog
+*.data
+*.table
+*.index
+*.tmp
+*.sql
 ./docs/doxy/
 build/*
 build_*
