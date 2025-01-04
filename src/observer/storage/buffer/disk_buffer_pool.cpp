@@ -30,13 +30,15 @@ static const int MEM_POOL_ITEM_NUM = 20;
 string BPFileHeader::to_string() const
 {
   stringstream ss;
-  ss << "pageCount:" << page_count << ", allocatedCount:" << allocated_pages;
+  ss << "pageCount:" << page_count
+     << ", allocatedCount:" << allocated_pages;
   return ss.str();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-BPFrameManager::BPFrameManager(const char *name) : allocator_(name) {}
+BPFrameManager::BPFrameManager(const char *name) : allocator_(name)
+{}
 
 RC BPFrameManager::init(int pool_num)
 {
@@ -128,8 +130,8 @@ Frame *BPFrameManager::alloc(int file_desc, PageNum page_num)
 
   frame = allocator_.alloc();
   if (frame != nullptr) {
-    ASSERT(
-        frame->pin_count() == 0, "got an invalid frame that pin count is not 0. frame=%s", to_string(*frame).c_str());
+    ASSERT(frame->pin_count() == 0, "got an invalid frame that pin count is not 0. frame=%s", 
+           to_string(*frame).c_str());
     frame->set_page_num(page_num);
     frame->pin();
     frames_.put(frame_id, frame);
@@ -150,13 +152,8 @@ RC BPFrameManager::free_internal(const FrameId &frame_id, Frame *frame)
   Frame *frame_source = nullptr;
   [[maybe_unused]] bool found = frames_.get(frame_id, frame_source);
   ASSERT(found && frame == frame_source && frame->pin_count() == 1,
-      "failed to free frame. found=%d, frameId=%s, frame_source=%p, frame=%p, pinCount=%d, lbt=%s",
-      found,
-      to_string(frame_id).c_str(),
-      frame_source,
-      frame,
-      frame->pin_count(),
-      lbt());
+         "failed to free frame. found=%d, frameId=%s, frame_source=%p, frame=%p, pinCount=%d, lbt=%s",
+         found, to_string(frame_id).c_str(), frame_source, frame, frame->pin_count(), lbt());
 
   frame->unpin();
   frames_.remove(frame_id);
@@ -181,8 +178,10 @@ std::list<Frame *> BPFrameManager::find_list(int file_desc)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-BufferPoolIterator::BufferPoolIterator() {}
-BufferPoolIterator::~BufferPoolIterator() {}
+BufferPoolIterator::BufferPoolIterator()
+{}
+BufferPoolIterator::~BufferPoolIterator()
+{}
 RC BufferPoolIterator::init(DiskBufferPool &bp, PageNum start_page /* = 0 */)
 {
   bitmap_.init(bp.file_header_->bitmap, bp.file_header_->page_count);
@@ -194,7 +193,10 @@ RC BufferPoolIterator::init(DiskBufferPool &bp, PageNum start_page /* = 0 */)
   return RC::SUCCESS;
 }
 
-bool BufferPoolIterator::has_next() { return bitmap_.next_setted_bit(current_page_num_ + 1) != -1; }
+bool BufferPoolIterator::has_next()
+{
+  return bitmap_.next_setted_bit(current_page_num_ + 1) != -1;
+}
 
 PageNum BufferPoolIterator::next()
 {
@@ -302,7 +304,7 @@ RC DiskBufferPool::get_this_page(PageNum page_num, Frame **frame)
     return RC::SUCCESS;
   }
 
-  std::scoped_lock lock_guard(lock_);  // 直接加了一把大锁，其实可以根据访问的页面来细化提高并行度
+  std::scoped_lock lock_guard(lock_); // 直接加了一把大锁，其实可以根据访问的页面来细化提高并行度
 
   // Allocate one page and load the data into this page
   Frame *allocated_frame = nullptr;
@@ -331,7 +333,7 @@ RC DiskBufferPool::allocate_page(Frame **frame)
   RC rc = RC::SUCCESS;
 
   lock_.lock();
-
+  
   int byte = 0, bit = 0;
   if ((file_header_->allocated_pages) < (file_header_->page_count)) {
     // There is one free page
@@ -568,7 +570,7 @@ RC DiskBufferPool::allocate_frame(PageNum page_num, Frame **buffer)
     }
 
     LOG_TRACE("frames are all allocated, so we should purge some frames to get one free frame");
-    (void)frame_manager_.purge_frames(1 /*count*/, purger);
+    (void)frame_manager_.purge_frames(1/*count*/, purger);
   }
   return RC::BUFFERPOOL_NOBUF;
 }
@@ -605,7 +607,10 @@ RC DiskBufferPool::load_page(PageNum page_num, Frame *frame)
   return RC::SUCCESS;
 }
 
-int DiskBufferPool::file_desc() const { return file_desc_; }
+int DiskBufferPool::file_desc() const
+{
+  return file_desc_;
+}
 ////////////////////////////////////////////////////////////////////////////////
 BufferPoolManager::BufferPoolManager(int memory_size /* = 0 */)
 {
@@ -727,11 +732,31 @@ RC BufferPoolManager::close_file(const char *_file_name)
   DiskBufferPool *bp = iter->second;
   buffer_pools_.erase(iter);
   lock_.unlock();
-
+  
   delete bp;
   return RC::SUCCESS;
 }
+RC BufferPoolManager::delete_file(const char *file_name)
+{
+  auto iter = buffer_pools_.find(file_name);
+  if (iter == buffer_pools_.end()) {
+    LOG_ERROR("file has not opened: %s,the cap of buffer_pools is %d",file_name,buffer_pools_.size());
+    return RC::INTERNAL;
+  }
 
+  int fd = iter->second->file_desc();
+  fd_buffer_pools_.erase(fd);
+
+  DiskBufferPool *bp = iter->second;
+  buffer_pools_.erase(iter);
+  delete bp;
+  int remove_ret=::remove(file_name);
+  if(remove_ret!=0){
+    LOG_ERROR("remove file failed, fileName: %s",file_name);
+    return RC::INTERNAL;
+  }
+  return RC::SUCCESS;
+}
 RC BufferPoolManager::flush_page(Frame &frame)
 {
   int fd = frame.file_desc();
@@ -756,4 +781,7 @@ void BufferPoolManager::set_instance(BufferPoolManager *bpm)
   }
   default_bpm = bpm;
 }
-BufferPoolManager &BufferPoolManager::instance() { return *default_bpm; }
+BufferPoolManager &BufferPoolManager::instance()
+{
+  return *default_bpm;
+}

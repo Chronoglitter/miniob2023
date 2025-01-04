@@ -38,7 +38,7 @@ public:
    * @brief 写数据到文件/socket
    * @details 缓存满会自动刷新缓存
    * @param data 要写入的数据
-   * @param size 要写入的数据大小
+   * @param size 要写入的数据大小 
    * @param write_size 实际写入的数据大小
    */
   RC write(const char *data, int32_t size, int32_t &write_size);
@@ -56,11 +56,6 @@ public:
    * @details 将缓存中的数据全部写入文件/socket
    */
   RC flush();
-
-  /**
-   * @description: 清空缓存
-   */
-  void clear() { buffer_.clear(); }
 
 private:
   /**

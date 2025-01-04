@@ -31,10 +31,12 @@ See the Mulan PSL v2 for more details. */
 using namespace common;
 
 // Constructor
-SessionStage::SessionStage(const char *tag) : Stage(tag) {}
+SessionStage::SessionStage(const char *tag) : Stage(tag)
+{}
 
 // Destructor
-SessionStage::~SessionStage() {}
+SessionStage::~SessionStage()
+{}
 
 // Parse properties, instantiate a stage object
 Stage *SessionStage::make_stage(const std::string &tag)
@@ -63,10 +65,16 @@ bool SessionStage::set_properties()
 }
 
 // Initialize stage params and validate outputs
-bool SessionStage::initialize() { return true; }
+bool SessionStage::initialize()
+{
+  return true;
+}
 
 // Cleanup after disconnection
-void SessionStage::cleanup() {}
+void SessionStage::cleanup()
+{
+
+}
 
 void SessionStage::handle_event(StageEvent *event)
 {
@@ -93,14 +101,11 @@ void SessionStage::handle_request(StageEvent *event)
   Session::set_current_session(sev->session());
   sev->session()->set_current_request(sev);
   SQLStageEvent sql_event(sev, sql);
-  RC rc = handle_sql(&sql_event);
-  if (rc != RC::SUCCESS) {
-    sev->sql_result()->set_return_code(rc);
-  }
+  (void)handle_sql(&sql_event);
 
   Communicator *communicator = sev->get_communicator();
   bool need_disconnect = false;
-  rc = communicator->write_result(sev, need_disconnect);
+  RC rc = communicator->write_result(sev, need_disconnect);
   LOG_INFO("write result return %s", strrc(rc));
   if (need_disconnect) {
     Server::close_connection(communicator);
@@ -138,13 +143,13 @@ RC SessionStage::handle_sql(SQLStageEvent *sql_event)
     LOG_TRACE("failed to do resolve. rc=%s", strrc(rc));
     return rc;
   }
-
+  
   rc = optimize_stage_.handle_request(sql_event);
   if (rc != RC::UNIMPLENMENT && rc != RC::SUCCESS) {
     LOG_TRACE("failed to do optimize. rc=%s", strrc(rc));
     return rc;
   }
-
+  
   rc = execute_stage_.handle_request(sql_event);
   if (OB_FAIL(rc)) {
     LOG_TRACE("failed to do execute. rc=%s", strrc(rc));

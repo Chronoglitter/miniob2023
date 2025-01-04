@@ -30,7 +30,8 @@ class CreateTableStmt : public Stmt
 {
 public:
   CreateTableStmt(const std::string &table_name, const std::vector<AttrInfoSqlNode> &attr_infos)
-      : table_name_(table_name), attr_infos_(attr_infos)
+        : table_name_(table_name),
+          attr_infos_(attr_infos)
   {}
   virtual ~CreateTableStmt() = default;
 

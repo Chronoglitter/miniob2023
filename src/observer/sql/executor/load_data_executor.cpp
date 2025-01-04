@@ -17,7 +17,6 @@ See the Mulan PSL v2 for more details. */
 #include "event/session_event.h"
 #include "sql/executor/sql_result.h"
 #include "common/lang/string.h"
-#include "sql/parser/value.h"
 #include "sql/stmt/load_data_stmt.h"
 
 using namespace common;
@@ -41,8 +40,10 @@ RC LoadDataExecutor::execute(SQLStageEvent *sql_event)
  * @param errmsg 如果出现错误，通过这个参数返回错误信息
  * @return 成功返回RC::SUCCESS
  */
-RC insert_record_from_file(
-    Table *table, std::vector<std::string> &file_values, std::vector<Value> &record_values, std::stringstream &errmsg)
+RC insert_record_from_file(Table *table, 
+                           std::vector<std::string> &file_values, 
+                           std::vector<Value> &record_values, 
+                           std::stringstream &errmsg)
 {
 
   const int field_num = record_values.size();
@@ -77,7 +78,9 @@ RC insert_record_from_file(
         } else {
           record_values[i].set_int(int_value);
         }
-      } break;
+      }
+
+      break;
       case FLOATS: {
         deserialize_stream.clear();
         deserialize_stream.str(file_value);
@@ -92,24 +95,7 @@ RC insert_record_from_file(
         }
       } break;
       case CHARS: {
-        record_values[i].set_text(file_value.c_str());
-      } break;
-      case TEXTS: {
         record_values[i].set_string(file_value.c_str());
-      } break;
-      case DATES: {
-        deserialize_stream.clear();  // 清理stream的状态，防止多次解析出现异常
-        deserialize_stream.str(file_value);
-
-        int date_value;
-        deserialize_stream >> date_value;
-        if (!deserialize_stream || !deserialize_stream.eof()) {
-          errmsg << "need an integer but got '" << file_values[i] << "' (field index:" << i << ")";
-
-          rc = RC::SCHEMA_FIELD_TYPE_MISMATCH;
-        } else {
-          record_values[i].set_date(date_value);
-        }
       } break;
       default: {
         errmsg << "Unsupported field type to loading: " << field->type();
@@ -146,7 +132,7 @@ void LoadDataExecutor::load_data(Table *table, const char *file_name, SqlResult 
   struct timespec begin_time;
   clock_gettime(CLOCK_MONOTONIC, &begin_time);
   const int sys_field_num = table->table_meta().sys_field_num();
-  const int field_num = table->table_meta().field_num() - sys_field_num - table->table_meta().extra_field_num();
+  const int field_num = table->table_meta().field_num() - sys_field_num;
 
   std::vector<Value> record_values(field_num);
   std::string line;

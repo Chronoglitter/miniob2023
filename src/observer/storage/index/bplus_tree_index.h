@@ -21,15 +21,16 @@ See the Mulan PSL v2 for more details. */
  * @brief B+树索引
  * @ingroup Index
  */
-class BplusTreeIndex : public Index
+class BplusTreeIndex : public Index 
 {
 public:
   BplusTreeIndex() = default;
   virtual ~BplusTreeIndex() noexcept;
 
-  RC create(const char *file_name, const IndexMeta &index_meta, const std::vector<FieldMeta> &field_metas,
-      const std::vector<int> &field_ids);
-  RC open(const char *file_name, const IndexMeta &index_meta, const std::vector<FieldMeta> &field_metas);
+  RC create(const char *file_name, const IndexMeta &index_meta, const FieldMeta &field_meta);
+  RC open(const char *file_name, const IndexMeta &index_meta, const FieldMeta &field_meta);
+  RC create(const char *file_name, const IndexMeta &index_meta, const std::vector<const FieldMeta*>&);
+  RC open(const char *file_name, const IndexMeta &index_meta, const std::vector<const FieldMeta*>&);
   RC close();
 
   RC insert_entry(const char *record, const RID *rid) override;
@@ -38,8 +39,8 @@ public:
   /**
    * 扫描指定范围的数据
    */
-  IndexScanner *create_scanner(const char *left_key, int left_len, bool left_inclusive, const char *right_key,
-      int right_len, bool right_inclusive) override;
+IndexScanner *create_scanner(const std::vector<const char *> &left_keys, const std::vector<int> &left_lens, bool left_inclusive, const std::vector<const char *> &right_keys, const std::vector<int> &right_lens, bool right_inclusive)
+override;
 
   RC sync() override;
 
@@ -52,7 +53,7 @@ private:
  * @brief B+树索引扫描器
  * @ingroup Index
  */
-class BplusTreeIndexScanner : public IndexScanner
+class BplusTreeIndexScanner : public IndexScanner 
 {
 public:
   BplusTreeIndexScanner(BplusTreeHandler &tree_handle);
@@ -61,8 +62,7 @@ public:
   RC next_entry(RID *rid) override;
   RC destroy() override;
 
-  RC open(const char *left_key, int left_len, bool left_inclusive, const char *right_key, int right_len,
-      bool right_inclusive);
+  RC open(const std::vector<const char *> &left_keys, const std::vector<int> &left_lens, bool left_inclusive, const std::vector<const char *> &right_keys, const std::vector<int> &right_lens, bool right_inclusive);
 
 private:
   BplusTreeScanner tree_scanner_;

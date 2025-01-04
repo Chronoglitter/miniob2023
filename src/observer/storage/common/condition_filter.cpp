@@ -12,11 +12,9 @@ See the Mulan PSL v2 for more details. */
 // Created by Wangyunlai on 2021/5/7.
 //
 
-#include <cassert>
 #include <stddef.h>
 #include <math.h>
 #include "condition_filter.h"
-#include "sql/parser/parse_defs.h"
 #include "storage/record/record_manager.h"
 #include "common/log/log.h"
 #include "storage/table/table.h"
@@ -24,7 +22,8 @@ See the Mulan PSL v2 for more details. */
 
 using namespace common;
 
-ConditionFilter::~ConditionFilter() {}
+ConditionFilter::~ConditionFilter()
+{}
 
 DefaultConditionFilter::DefaultConditionFilter()
 {
@@ -36,7 +35,8 @@ DefaultConditionFilter::DefaultConditionFilter()
   right_.attr_length = 0;
   right_.attr_offset = 0;
 }
-DefaultConditionFilter::~DefaultConditionFilter() {}
+DefaultConditionFilter::~DefaultConditionFilter()
+{}
 
 RC DefaultConditionFilter::init(const ConDesc &left, const ConDesc &right, AttrType attr_type, CompOp comp_op)
 {
@@ -45,7 +45,7 @@ RC DefaultConditionFilter::init(const ConDesc &left, const ConDesc &right, AttrT
     return RC::INVALID_ARGUMENT;
   }
 
-  if (comp_op < CompOp::EQUAL_TO || comp_op >= CompOp::NO_OP) {
+  if (comp_op < EQUAL_TO || comp_op >= NO_OP) {
     LOG_ERROR("Invalid condition with unsupported compare operation: %d", comp_op);
     return RC::INVALID_ARGUMENT;
   }
@@ -66,16 +66,11 @@ RC DefaultConditionFilter::init(Table &table, const ConditionSqlNode &condition)
   AttrType type_left = UNDEFINED;
   AttrType type_right = UNDEFINED;
 
-  assert(condition.left->type == PExpType::UNARY);
-  assert(condition.right->type == PExpType::UNARY);
-  PUnaryExpr *left_expr = condition.left->uexp;
-  PUnaryExpr *right_expr = condition.right->uexp;
-
-  if (1 == left_expr->is_attr) {
+  if (1 == condition.left_is_attr) {
     left.is_attr = true;
-    const FieldMeta *field_left = table_meta.field(left_expr->attr.attribute_name.c_str());
+    const FieldMeta *field_left = table_meta.field(condition.left_attr.attribute_name.c_str());
     if (nullptr == field_left) {
-      LOG_WARN("No such field in condition. %s.%s", table.name(), left_expr->attr.attribute_name.c_str());
+      LOG_WARN("No such field in condition. %s.%s", table.name(), condition.left_attr.attribute_name.c_str());
       return RC::SCHEMA_FIELD_MISSING;
     }
     left.attr_length = field_left->len();
@@ -84,18 +79,18 @@ RC DefaultConditionFilter::init(Table &table, const ConditionSqlNode &condition)
     type_left = field_left->type();
   } else {
     left.is_attr = false;
-    left.value = left_expr->value;  // 校验type 或者转换类型
-    type_left = left_expr->value.attr_type();
+    left.value = condition.left_value;  // 校验type 或者转换类型
+    type_left = condition.left_value.attr_type();
 
     left.attr_length = 0;
     left.attr_offset = 0;
   }
 
-  if (right_expr->is_attr) {
+  if (1 == condition.right_is_attr) {
     right.is_attr = true;
-    const FieldMeta *field_right = table_meta.field(right_expr->attr.attribute_name.c_str());
+    const FieldMeta *field_right = table_meta.field(condition.right_attr.attribute_name.c_str());
     if (nullptr == field_right) {
-      LOG_WARN("No such field in condition. %s.%s", table.name(), right_expr->attr.attribute_name.c_str());
+      LOG_WARN("No such field in condition. %s.%s", table.name(), condition.right_attr.attribute_name.c_str());
       return RC::SCHEMA_FIELD_MISSING;
     }
     right.attr_length = field_right->len();
@@ -103,8 +98,8 @@ RC DefaultConditionFilter::init(Table &table, const ConditionSqlNode &condition)
     type_right = field_right->type();
   } else {
     right.is_attr = false;
-    right.value = right_expr->value;
-    type_right = right_expr->value.attr_type();
+    right.value = condition.right_value;
+    type_right = condition.right_value.attr_type();
 
     right.attr_length = 0;
     right.attr_offset = 0;
@@ -142,18 +137,27 @@ bool DefaultConditionFilter::filter(const Record &rec) const
   } else {
     right_value.set_value(right_.value);
   }
-
+  if(comp_op_ == LIKE_WITH || comp_op_ == NOT_LIKE_WITH){
+    return left_value.compare_like(right_value);
+  }
   int cmp_result = left_value.compare(right_value);
 
   switch (comp_op_) {
-    case CompOp::EQUAL_TO: return 0 == cmp_result;
-    case CompOp::LESS_EQUAL: return cmp_result <= 0;
-    case CompOp::NOT_EQUAL: return cmp_result != 0;
-    case CompOp::LESS_THAN: return cmp_result < 0;
-    case CompOp::GREAT_EQUAL: return cmp_result >= 0;
-    case CompOp::GREAT_THAN: return cmp_result > 0;
+    case EQUAL_TO:
+      return 0 == cmp_result;
+    case LESS_EQUAL:
+      return cmp_result <= 0;
+    case NOT_EQUAL:
+      return cmp_result != 0;
+    case LESS_THAN:
+      return cmp_result < 0;
+    case GREAT_EQUAL:
+      return cmp_result >= 0;
+    case GREAT_THAN:
+      return cmp_result > 0;
 
-    default: break;
+    default:
+      break;
   }
 
   LOG_PANIC("Never should print this.");

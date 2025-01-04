@@ -21,7 +21,6 @@ using namespace std;
 RC TableScanPhysicalOperator::open(Trx *trx)
 {
   RC rc = table_->get_record_scanner(record_scanner_, trx, readonly_);
-  // tuple的schema应该与tuple_schema尽量保持一致, tuple_schema只包含了用户字段， tuple是用户字段+null字段
   if (rc == RC::SUCCESS) {
     tuple_.set_schema(table_, table_->table_meta().field_metas());
   }
@@ -60,7 +59,10 @@ RC TableScanPhysicalOperator::next()
   return rc;
 }
 
-RC TableScanPhysicalOperator::close() { return record_scanner_.close_scan(); }
+RC TableScanPhysicalOperator::close()
+{
+  return record_scanner_.close_scan();
+}
 
 Tuple *TableScanPhysicalOperator::current_tuple()
 {
@@ -68,7 +70,10 @@ Tuple *TableScanPhysicalOperator::current_tuple()
   return &tuple_;
 }
 
-string TableScanPhysicalOperator::param() const { return table_->name(); }
+string TableScanPhysicalOperator::param() const
+{
+  return table_->name();
+}
 
 void TableScanPhysicalOperator::set_predicates(vector<unique_ptr<Expression>> &&exprs)
 {

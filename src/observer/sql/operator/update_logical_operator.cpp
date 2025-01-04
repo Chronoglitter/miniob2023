@@ -1,6 +1,7 @@
 #include "sql/operator/update_logical_operator.h"
+#include "storage/field/field.h"
 
-UpdateLogicalOperator::UpdateLogicalOperator(Table *table, std::vector<std::unique_ptr<Expression>> &&out_value_exprs,
-    const std::vector<const FieldMeta *> &field_metas)
-    : value_exprs(std::move(out_value_exprs)), table_(table), field_metas_(field_metas)
-{}
+UpdateLogicalOperator::UpdateLogicalOperator(Table *table, std::vector<Value> values, std::vector<const FieldMeta *> field_metas,bool b)
+    : table_(table), values_(values), field_metas_(field_metas),field_has_mutli_row_(b)
+{
+}

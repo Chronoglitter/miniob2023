@@ -39,20 +39,17 @@ enum class PhysicalOperatorType
 {
   TABLE_SCAN,
   INDEX_SCAN,
-  VIEW_SCAN,
   NESTED_LOOP_JOIN,
-  HASH_JOIN,
   EXPLAIN,
   PREDICATE,
   PROJECT,
-  AGGREGATION,
-  GROUPBY,
-  ORDERBY,
   CALC,
   STRING_LIST,
   DELETE,
   INSERT,
   UPDATE,
+  AGGREGATION,
+  SORT
 };
 
 /**
@@ -80,29 +77,16 @@ public:
 
   virtual Tuple *current_tuple() = 0;
 
-  // 获取当前tuple的schema
-  virtual TupleSchema tuple_schema() const
+  void add_child(std::unique_ptr<PhysicalOperator> oper)
   {
-    TupleSchema empty_schema;
-    return empty_schema;
+    children_.emplace_back(std::move(oper));
   }
 
-  void add_child(std::unique_ptr<PhysicalOperator> oper) { children_.emplace_back(std::move(oper)); }
-
-  std::vector<std::unique_ptr<PhysicalOperator>> &children() { return children_; }
-
-  void set_sub_query(const std::shared_ptr<Tuple> &tuple)
+  std::vector<std::unique_ptr<PhysicalOperator>> &children()
   {
-    parent_tuple_ = tuple;
-    for (const auto &child : children_) {
-      child->set_sub_query(tuple);
-    }
+    return children_;
   }
-
-  virtual Tuple *parrent_tuple() { return parent_tuple_.get(); }
 
 protected:
   std::vector<std::unique_ptr<PhysicalOperator>> children_;
-  // for sub query
-  std::shared_ptr<Tuple> parent_tuple_;
 };

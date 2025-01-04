@@ -100,32 +100,39 @@ RC Db::create_table(const char *table_name, int attribute_count, const AttrInfoS
   LOG_INFO("Create table success. table name=%s, table_id:%d", table_name, table_id);
   return RC::SUCCESS;
 }
-
 RC Db::drop_table(const char *table_name)
 {
   RC rc = RC::SUCCESS;
-
   // check table_name
-  auto iter = opened_tables_.find(table_name);
-  if (iter == opened_tables_.end()) {
-    LOG_WARN("there is not table %s in current db.", table_name);
-    return RC::SCHEMA_TABLE_NOT_EXIST;
+  if (opened_tables_.count(table_name) == 0) {
+    LOG_ERROR("%s has not been created before.", table_name);
+    return RC::SCHEMA_TABLE_EXIST;
   }
-
-  Table *table = iter->second;
-
-  rc = table->drop();
+  Table *table=opened_tables_[table_name];
+  int32_t table_id = table->table_id();
+  // 文件路径可以移到Table模块
+  // std::string table_file_path = table_meta_file(path_.c_str(), table_name);
+  // Table *table = new Table();
+  // int32_t table_id = next_table_id_++;
+  // rc = table->create(table_id, table_file_path.c_str(), table_name, path_.c_str(), attribute_count, attributes);
+  // if (rc != RC::SUCCESS) {
+  //   LOG_ERROR("Failed to create table %s.", table_name);
+  //   delete table;
+  //   return rc;
+  // }
+  std::string table_file_path = table_meta_file(path_.c_str(), table_name);
+  rc = table->drop(table_id, table_file_path.c_str(), table_name, path_.c_str());
   if (rc != RC::SUCCESS) {
-    LOG_ERROR("Failed to create table %s.", table_name);
+    LOG_ERROR("Failed to drop table %s.", table_name);
     delete table;
     return rc;
   }
-  opened_tables_.erase(iter);
-  delete table;
 
-  return rc;
+  // opened_tables_[table_name] = table;
+  opened_tables_.erase(table_name);
+  LOG_INFO("Drop table success. table name=%s, table_id:%d", table_name, table_id);
+  return RC::SUCCESS;
 }
-
 Table *Db::find_table(const char *table_name) const
 {
   std::unordered_map<std::string, Table *>::const_iterator iter = opened_tables_.find(table_name);
@@ -182,7 +189,10 @@ RC Db::open_all_tables()
   return rc;
 }
 
-const char *Db::name() const { return name_.c_str(); }
+const char *Db::name() const
+{
+  return name_.c_str();
+}
 
 void Db::all_tables(std::vector<std::string> &table_names) const
 {
@@ -207,6 +217,12 @@ RC Db::sync()
   return rc;
 }
 
-RC Db::recover() { return clog_manager_->recover(this); }
+RC Db::recover()
+{
+  return clog_manager_->recover(this);
+}
 
-CLogManager *Db::clog_manager() { return clog_manager_.get(); }
+CLogManager *Db::clog_manager()
+{
+  return clog_manager_.get();
+}

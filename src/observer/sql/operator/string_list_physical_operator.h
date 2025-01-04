@@ -25,7 +25,8 @@ See the Mulan PSL v2 for more details. */
 class StringListPhysicalOperator : public PhysicalOperator
 {
 public:
-  StringListPhysicalOperator() {}
+  StringListPhysicalOperator()
+  {}
 
   virtual ~StringListPhysicalOperator() = default;
 
@@ -35,7 +36,10 @@ public:
     strings_.emplace_back(begin, end);
   }
 
-  void append(std::initializer_list<std::string> init) { strings_.emplace_back(init); }
+  void append(std::initializer_list<std::string> init)
+  {
+    strings_.emplace_back(init);
+  }
 
   template <typename T>
   void append(const T &v)
@@ -43,9 +47,15 @@ public:
     strings_.emplace_back(1, v);
   }
 
-  PhysicalOperatorType type() const override { return PhysicalOperatorType::STRING_LIST; }
+  PhysicalOperatorType type() const override
+  {
+    return PhysicalOperatorType::STRING_LIST;
+  }
 
-  RC open(Trx *) override { return RC::SUCCESS; }
+  RC open(Trx *) override
+  {
+    return RC::SUCCESS;
+  }
 
   RC next() override
   {

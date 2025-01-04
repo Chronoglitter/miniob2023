@@ -19,62 +19,53 @@ See the Mulan PSL v2 for more details. */
 
 #include "common/rc.h"
 #include "sql/stmt/stmt.h"
-#include "sql/stmt/join_on_stmt.h"
 #include "storage/field/field.h"
+#include "storage/field/order_field.h"
 
 class FieldMeta;
 class FilterStmt;
-class JoinOnStmt;
 class Db;
 class Table;
-
-struct OrderByUnit
-{
-  Field field;
-  SortType sort_type;
-  OrderByUnit(const Field &other_field, const SortType &other_sort_type)
-  {
-    field = other_field;
-    sort_type = other_sort_type;
-  }
-};
 
 /**
  * @brief 表示select语句
  * @ingroup Statement
  */
-class SelectStmt : public Stmt
+class SelectStmt : public Stmt 
 {
 public:
   SelectStmt() = default;
   ~SelectStmt() override;
 
-  StmtType type() const override { return StmtType::SELECT; }
+  StmtType type() const override
+  {
+    return StmtType::SELECT;
+  }
 
 public:
-  static RC create(Db *db, const SelectSqlNode &select_sql, 
-    const std::unordered_map<std::string, Table*>& parent_table_map, Stmt *&stmt);
-  // 目前只用这个方法， table_name不支持别名
-  static RC createField(
-      const std::vector<Table *> &tables, const char *table_name, const char *attr_name, Field &field);
+  static RC create(Db *db, const SelectSqlNode &select_sql, Stmt *&stmt);
 
 public:
-  const std::vector<Table *> &tables() const { return tables_; }
-  std::vector<Field> &groupbys() { return groupbys_; }
-  FilterStmt *filter_stmt() const { return filter_stmt_; }
-  JoinOnStmt *join_on_stmt() const { return join_on_stmt_; }
-  FilterStmt *having_stmt() const { return having_stmt_; }
-  std::vector<OrderByUnit> *orderbys() const { return orderbys_.get(); }
-
-  // not own this, move to physical operator
-  std::vector<std::unique_ptr<Expression>> projects;
-
+  const std::vector<Table *> &tables() const
+  {
+    return tables_;
+  }
+  const std::vector<Field> &query_fields() const
+  {
+    return query_fields_;
+  }
+  FilterStmt *filter_stmt() const
+  {
+    return filter_stmt_;
+  }
+  const std::vector<OrderFiled> &order_fileds() const
+  {
+    return order_fileds_;
+  }
 private:
+  std::vector<Field> query_fields_;
   std::vector<Table *> tables_;
-  std::unique_ptr<std::vector<OrderByUnit>> orderbys_;
   FilterStmt *filter_stmt_ = nullptr;
-  FilterStmt *having_stmt_ = nullptr;
-  std::vector<Field> groupbys_;
-  JoinOnStmt *join_on_stmt_ = nullptr;
-  bool is_aggregation_stmt_{false};
+  std::vector<OrderFiled> order_fileds_;
+
 };

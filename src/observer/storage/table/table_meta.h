@@ -14,7 +14,6 @@ See the Mulan PSL v2 for more details. */
 
 #pragma once
 
-#include <iterator>
 #include <string>
 #include <vector>
 
@@ -23,10 +22,9 @@ See the Mulan PSL v2 for more details. */
 #include "storage/index/index_meta.h"
 #include "common/lang/serializable.h"
 
-class Table;
 /**
  * @brief 表元数据
- *
+ * 
  */
 class TableMeta : public common::Serializable
 {
@@ -49,22 +47,17 @@ public:
   const FieldMeta *field(int index) const;
   const FieldMeta *field(const char *name) const;
   const FieldMeta *find_field_by_offset(int offset) const;
-  const FieldMeta *null_field() const;
-  const std::vector<FieldMeta> *field_metas() const { return &fields_; }
-
-  // 仅用于视图
-  const std::vector<const Table *> &view_tables() const { return view_tables_; }
-  const Table *view_table(int index) const;
-  const Table *view_table(const char *name) const;
-
+  const std::vector<FieldMeta> *field_metas() const
+  {
+    return &fields_;
+  }
   auto trx_fields() const -> const std::pair<const FieldMeta *, int>;
-
-  int field_num() const;        // sys field and null included
-  int sys_field_num() const;    // sys field
-  int extra_field_num() const;  // null field
+  
+  int field_num() const;  // sys field included
+  int sys_field_num() const;
 
   const IndexMeta *index(const char *name) const;
-  const IndexMeta *find_index_by_field(const std::vector<std::string> &fields) const;
+  const IndexMeta *find_index_by_field(const char *field) const;
   const IndexMeta *index(int i) const;
   int index_num() const;
 
@@ -78,15 +71,10 @@ public:
   void desc(std::ostream &os) const;
 
 protected:
-  int32_t table_id_ = -1;
+  int32_t     table_id_ = -1;
   std::string name_;
-  std::vector<FieldMeta> fields_;  // 最前面包含sys_fields, 最后面包含了null field
+  std::vector<FieldMeta> fields_;  // 包含sys_fields
   std::vector<IndexMeta> indexes_;
 
-  std::vector<const Table *> view_tables_;  // 对于视图来说, 要确定每个字段都来自哪张表. 因为视图是放在内存中的,
-                                            // 不需要持久化.
-
   int record_size_ = 0;
-
-  friend Table;
 };

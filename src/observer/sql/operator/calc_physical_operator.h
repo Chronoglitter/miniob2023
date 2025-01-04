@@ -20,19 +20,27 @@ See the Mulan PSL v2 for more details. */
 class CalcPhysicalOperator : public PhysicalOperator
 {
 public:
-  CalcPhysicalOperator(std::vector<std::unique_ptr<Expression>> &&expressions) : expressions_(std::move(expressions))
-  {
-    tuple_.set_expressions(&expressions_);
-  }
+  CalcPhysicalOperator(std::vector<std::unique_ptr<Expression>> &&expressions)
+    : expressions_(std::move(expressions)), tuple_(expressions_)
+  {}
 
   virtual ~CalcPhysicalOperator() = default;
 
-  PhysicalOperatorType type() const override { return PhysicalOperatorType::CALC; }
+  PhysicalOperatorType type() const override
+  {
+    return PhysicalOperatorType::CALC;
+  }
 
-  std::string name() const override { return "CALC"; }
-  std::string param() const override { return ""; }
+  std::string name() const override
+  {
+    return "CALC";
+  }
+  std::string param() const override
+  {
+    return "";
+  }
 
-  RC open(Trx *trx) override { return RC::SUCCESS; }
+  RC open(Trx *trx) override { return RC::SUCCESS;}
   RC next() override
   {
     RC rc = RC::SUCCESS;
@@ -54,19 +62,19 @@ public:
   }
   RC close() override { return RC::SUCCESS; }
 
-  int cell_num() const { return tuple_.cell_num(); }
-
-  Tuple *current_tuple() override { return &tuple_; }
-
-  const std::vector<std::unique_ptr<Expression>> &expressions() const { return expressions_; }
-
-  virtual TupleSchema tuple_schema() const override
+  int cell_num() const
   {
-    TupleSchema schema;
-    for (const unique_ptr<Expression> &expr : expressions_) {
-      schema.append_cell(expr->name().c_str());
-    }
-    return schema;
+    return tuple_.cell_num();
+  }
+
+  Tuple *current_tuple() override
+  {
+    return &tuple_;
+  }
+
+  const std::vector<std::unique_ptr<Expression>> &expressions() const
+  {
+    return expressions_;
   }
 
 private:

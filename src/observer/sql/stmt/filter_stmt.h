@@ -23,36 +23,97 @@ See the Mulan PSL v2 for more details. */
 class Db;
 class Table;
 class FieldMeta;
-struct FilterUnit
+
+struct FilterObj 
 {
-  CompOp comp{CompOp::NO_OP};
-  std::unique_ptr<Expression> left;
-  std::unique_ptr<Expression> right;
+  bool is_attr;
+  Field field;
+  Value value;
+  ConditionValueType type;
+  std::vector<Value>  value_list;
+  void init_attr(const Field &field)
+  {
+    is_attr = true;
+    type = ATTR;
+    this->field = field;
+  }
+
+  void init_value(const Value &value)
+  {
+    is_attr = false;
+    type = SINGLE_VALUE;
+    this->value = value;
+  }
+  void init_value_list( std::vector<Value>  value_list){
+    is_attr = false;
+    type = VALUE_LIST;
+    this->value_list.swap(value_list);
+  }
+};
+
+class FilterUnit 
+{
+public:
+  FilterUnit() = default;
+  ~FilterUnit()
+  {}
+
+  void set_comp(CompOp comp)
+  {
+    comp_ = comp;
+  }
+
+  CompOp comp() const
+  {
+    return comp_;
+  }
+
+  void set_left(const FilterObj &obj)
+  {
+    left_ = obj;
+  }
+  void set_right(const FilterObj &obj)
+  {
+    right_ = obj;
+  }
+
+  const FilterObj &left() const
+  {
+    return left_;
+  }
+  const FilterObj &right() const
+  {
+    return right_;
+  }
+
+private:
+  CompOp comp_ = NO_OP;
+  FilterObj left_;
+  FilterObj right_;
 };
 
 /**
  * @brief Filter/谓词/过滤语句
  * @ingroup Statement
  */
-class FilterStmt
+class FilterStmt 
 {
 public:
   FilterStmt() = default;
   virtual ~FilterStmt();
 
 public:
-  const std::vector<FilterUnit *> &filter_units() const { return filter_units_; }
+  const std::vector<FilterUnit *> &filter_units() const
+  {
+    return filter_units_;
+  }
 
 public:
-  static RC create(Db *db, Table *default_table, const std::unordered_map<std::string, Table *> &parent_table_map,
-      const std::unordered_map<std::string, Table *>& cur_table_map,
-      PConditionExpr *conditions, FilterStmt *&stmt);
+  static RC create(Db *db, Table *default_table, std::unordered_map<std::string, Table *> *tables,
+      const ConditionSqlNode *conditions, int condition_num, FilterStmt *&stmt);
 
   static RC create_filter_unit(Db *db, Table *default_table, std::unordered_map<std::string, Table *> *tables,
-      PConditionExpr *condition, FilterUnit *&filter_unit);
-
-  // 题目的连接条件要么全是and，要么全是or
-  bool is_or{false};
+      const ConditionSqlNode &condition, FilterUnit *&filter_unit);
 
 private:
   std::vector<FilterUnit *> filter_units_;  // 默认当前都是AND关系

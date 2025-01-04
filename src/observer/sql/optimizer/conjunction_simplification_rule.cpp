@@ -62,7 +62,7 @@ RC ConjunctionSimplificationRule::rewrite(std::unique_ptr<Expression> &expr, boo
         // always be true
         std::unique_ptr<Expression> child_expr = std::move(child_exprs.front());
         child_exprs.clear();
-        expr = std::make_unique<ValueExpr>(Value(true));
+        expr = std::move(child_expr);
         return rc;
       } else {
         child_exprs.erase(iter);

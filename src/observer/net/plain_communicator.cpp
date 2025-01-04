@@ -19,6 +19,25 @@ See the Mulan PSL v2 for more details. */
 #include "session/session.h"
 #include "common/io/io.h"
 #include "common/log/log.h"
+#include "sql/parser/parse_defs.h"
+
+const char* AggToStr(AggOp op){
+  switch (op) {
+  case MAX_AGGOP:
+    return "MAX";
+  case MIN_AGGOP:
+    return "MIN";
+  case AVG_AGGOP:
+    return "AVG";
+  case SUM_AGGOP:
+    return "SUM";
+  case COUNT_AGGOP:
+    return "COUNT";
+  default:
+    return "";
+  }
+}
+
 
 PlainCommunicator::PlainCommunicator()
 {
@@ -37,7 +56,7 @@ RC PlainCommunicator::read_event(SessionEvent *&event)
   int data_len = 0;
   int read_len = 0;
 
-  const int max_packet_size = 81920;
+  const int max_packet_size = 8192;
   std::vector<char> buf(max_packet_size);
 
   // 持续接收消息，直到遇到'\0'。将'\0'遇到的后续数据直接丢弃没有处理，因为目前仅支持一收一发的模式
@@ -98,9 +117,6 @@ RC PlainCommunicator::write_state(SessionEvent *event, bool &need_disconnect)
   const int buf_size = 2048;
   char *buf = new char[buf_size];
   const std::string &state_string = sql_result->state_string();
-  if (RC::SUCCESS != sql_result->return_code()) {
-    writer_->clear();
-  }
   if (state_string.empty()) {
     const char *result = RC::SUCCESS == sql_result->return_code() ? "SUCCESS" : "FAILURE";
     snprintf(buf, buf_size, "%s\n", result);
@@ -108,7 +124,7 @@ RC PlainCommunicator::write_state(SessionEvent *event, bool &need_disconnect)
     snprintf(buf, buf_size, "%s > %s\n", strrc(sql_result->return_code()), state_string.c_str());
   }
 
-  RC rc = writer_->writen(buf, strlen(buf));
+  RC rc = writer_->writen(buf, strlen(buf) + 1);
   if (OB_FAIL(rc)) {
     LOG_WARN("failed to send data to client. err=%s", strerror(errno));
     need_disconnect = true;
@@ -162,20 +178,9 @@ RC PlainCommunicator::write_result(SessionEvent *event, bool &need_disconnect)
 {
   RC rc = write_result_internal(event, need_disconnect);
   if (!need_disconnect) {
-    RC rc1 = write_debug(event, need_disconnect);
-    if (OB_FAIL(rc1)) {
-      LOG_WARN("failed to send debug info to client. rc=%s, err=%s", strrc(rc), strerror(errno));
-    }
+    (void)write_debug(event, need_disconnect);
   }
-  if (!need_disconnect) {
-    rc = writer_->writen(send_message_delimiter_.data(), send_message_delimiter_.size());
-    if (OB_FAIL(rc)) {
-      LOG_ERROR("Failed to send data back to client. ret=%s, error=%s", strrc(rc), strerror(errno));
-      need_disconnect = true;
-      return rc;
-    }
-  }
-  writer_->flush();  // TODO handle error
+  writer_->flush(); // TODO handle error
   return rc;
 }
 
@@ -212,9 +217,16 @@ RC PlainCommunicator::write_result_internal(SessionEvent *event, bool &need_disc
           return rc;
         }
       }
+      if (spec.aggOp() == NO_AGGOP){
+        int len = strlen(alias);
+        rc = writer_->writen(alias, len);
+      }else{
+        const char * agg_name = AggToStr(spec.aggOp());
+        std::string res = std::string(agg_name)+"("+std::string(alias)+")";
+        int len = strlen(res.c_str());
+        rc = writer_->writen(res.c_str(), len);
+      }
 
-      int len = strlen(alias);
-      rc = writer_->writen(alias, len);
       if (OB_FAIL(rc)) {
         LOG_WARN("failed to send data to client. err=%s", strerror(errno));
         sql_result->close();
@@ -235,10 +247,10 @@ RC PlainCommunicator::write_result_internal(SessionEvent *event, bool &need_disc
 
   rc = RC::SUCCESS;
   Tuple *tuple = nullptr;
-
   while (RC::SUCCESS == (rc = sql_result->next_tuple(tuple))) {
     assert(tuple != nullptr);
-    // int cell_num = tuple->cell_num(); // 使用 schema.cell_num()
+
+    int cell_num = tuple->cell_num();
     for (int i = 0; i < cell_num; i++) {
       if (i != 0) {
         const char *delim = " | ";
@@ -279,7 +291,7 @@ RC PlainCommunicator::write_result_internal(SessionEvent *event, bool &need_disc
     rc = RC::SUCCESS;
   }
 
-  if (cell_num == 0 || rc != RC::SUCCESS) {
+  if (cell_num == 0) {
     // 除了select之外，其它的消息通常不会通过operator来返回结果，表头和行数据都是空的
     // 这里针对这种情况做特殊处理，当表头和行数据都是空的时候，就返回处理的结果
     // 可能是insert/delete等操作，不直接返回给客户端数据，这里把处理结果返回给客户端
@@ -290,6 +302,14 @@ RC PlainCommunicator::write_result_internal(SessionEvent *event, bool &need_disc
     sql_result->set_return_code(rc);
     return write_state(event, need_disconnect);
   } else {
+
+    rc = writer_->writen(send_message_delimiter_.data(), send_message_delimiter_.size());
+    if (OB_FAIL(rc)) {
+      LOG_ERROR("Failed to send data back to client. ret=%s, error=%s", strrc(rc), strerror(errno));
+      sql_result->close();
+      return rc;
+    }
+
     need_disconnect = false;
   }
 

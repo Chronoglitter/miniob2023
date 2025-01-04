@@ -57,38 +57,28 @@ RC TableMeta::init(int32_t table_id, const char *name, int field_num, const Attr
 
   RC rc = RC::SUCCESS;
 
-  int field_offset = 0;
-  int trx_field_num = 0;
-  const vector<FieldMeta> *trx_fields = TrxKit::instance()->trx_fields();
+  int                      field_offset  = 4;
+  int                      trx_field_num = 0;
+  const vector<FieldMeta> *trx_fields    = TrxKit::instance()->trx_fields();
   if (trx_fields != nullptr) {
-    fields_.resize(field_num + trx_fields->size() + 1);  // 注意还有一个是null的bitmap字段
+    fields_.resize(field_num + trx_fields->size());
 
     for (size_t i = 0; i < trx_fields->size(); i++) {
       const FieldMeta &field_meta = (*trx_fields)[i];
-      fields_[i] = FieldMeta(field_meta.name(),
-          field_meta.type(),
-          field_offset,
-          field_meta.len(),
-          i, /*id值*/
-          false /*visible*/,
-          field_meta.is_not_null());
+      fields_[i] = FieldMeta(field_meta.name(), field_meta.type(), field_offset, field_meta.len(), false /*visible*/,field_meta.isNullable(),i);
+      LOG_DEBUG("init the fields type: %d",field_meta.type());
       field_offset += field_meta.len();
     }
 
     trx_field_num = static_cast<int>(trx_fields->size());
   } else {
-    fields_.resize(field_num + 1);  // 注意还有一个是null的bitmap字段
+    fields_.resize(field_num);
   }
 
   for (int i = 0; i < field_num; i++) {
     const AttrInfoSqlNode &attr_info = attributes[i];
-    rc = fields_[i + trx_field_num].init(attr_info.name.c_str(),
-        attr_info.type,
-        field_offset,
-        attr_info.length,
-        i, /*id值*/
-        true /*visible*/,
-        attr_info.is_not_null);
+    rc                               = fields_[i + trx_field_num].init(
+        attr_info.name.c_str(), attr_info.type, field_offset, attr_info.length, true /*visible*/,attr_info.isNullable,i+trx_field_num);
     if (rc != RC::SUCCESS) {
       LOG_ERROR("Failed to init field meta. table name=%s, field name: %s", name, attr_info.name.c_str());
       return rc;
@@ -97,20 +87,10 @@ RC TableMeta::init(int32_t table_id, const char *name, int field_num, const Attr
     field_offset += attr_info.length;
   }
 
-  // 增加 NULL 字段, 为了尽可能减少代码的改动, 将该字段放在record的最后部分
-  // 这里直接每个bit对应相应的字段是否为null值, 与mysql的实现不同
-  int null_field_len = (field_num + trx_field_num - 1) / 8 + 1;  // bitmap字节数
-  rc = fields_[trx_field_num + field_num].init(
-      "__null", AttrType::CHARS, field_offset, null_field_len, field_num, false, false);  // bitmap可变长, CHARS类型
-  if (RC::SUCCESS != rc) {
-    LOG_ERROR("Failed to init field meta. table name=%s, field name: %s", name, "__null");
-    return rc;
-  }
-  field_offset += null_field_len;
   record_size_ = field_offset;
 
   table_id_ = table_id;
-  name_ = name;
+  name_     = name;
   LOG_INFO("Sussessfully initialized table meta. table id=%d, name=%s", table_id, name);
   return RC::SUCCESS;
 }
@@ -143,23 +123,6 @@ const FieldMeta *TableMeta::field(const char *name) const
   }
   return nullptr;
 }
-const Table *TableMeta::view_table(int index) const { return view_tables_[index]; }
-const Table *TableMeta::view_table(const char *name) const
-{
-  if (nullptr == name) {
-    return nullptr;
-  }
-  int index{0};
-  for (const FieldMeta &field : fields_) {
-    if (0 == strcmp(field.name(), name)) {
-      return view_tables_[index];
-    }
-    ++index;
-  }
-  return nullptr;
-}
-
-const FieldMeta *TableMeta::null_field() const { return &fields_.back(); }
 
 const FieldMeta *TableMeta::find_field_by_offset(int offset) const
 {
@@ -181,11 +144,6 @@ int TableMeta::sys_field_num() const
   return static_cast<int>(trx_fields->size());
 }
 
-int TableMeta::extra_field_num() const  // null field
-{
-  return 1;
-}
-
 const IndexMeta *TableMeta::index(const char *name) const
 {
   for (const IndexMeta &index : indexes_) {
@@ -196,27 +154,10 @@ const IndexMeta *TableMeta::index(const char *name) const
   return nullptr;
 }
 
-const IndexMeta *TableMeta::find_index_by_field(const std::vector<std::string> &fields) const
+const IndexMeta *TableMeta::find_index_by_field(const char *field) const
 {
   for (const IndexMeta &index : indexes_) {
-    const std::vector<std::string> &index_fields = index.field();  // 最后一个field对应null的bitmap
-    int field_num = fields.size();
-    int index_field_num = index_fields.size() - 1;
-
-    // 完全匹配
-    if (field_num != index_field_num) {
-      continue;
-    }
-
-    // 支持联合索引
-    bool found = true;
-    for (int i = 0; i < field_num; ++i) {
-      if (0 != fields[i].compare(index_fields[i])) {
-        found = false;
-        break;
-      }
-    }
-    if (found) {
+    if (0 == strcmp(index.field(), field)) {
       return &index;
     }
   }
@@ -233,7 +174,7 @@ int TableMeta::serialize(std::ostream &ss) const
 {
 
   Json::Value table_value;
-  table_value[FIELD_TABLE_ID] = table_id_;
+  table_value[FIELD_TABLE_ID]   = table_id_;
   table_value[FIELD_TABLE_NAME] = name_;
 
   Json::Value fields_value;
@@ -254,7 +195,7 @@ int TableMeta::serialize(std::ostream &ss) const
   table_value[FIELD_INDEXES] = std::move(indexes_value);
 
   Json::StreamWriterBuilder builder;
-  Json::StreamWriter *writer = builder.newStreamWriter();
+  Json::StreamWriter       *writer = builder.newStreamWriter();
 
   std::streampos old_pos = ss.tellp();
   writer->write(table_value, &ss);
@@ -266,9 +207,9 @@ int TableMeta::serialize(std::ostream &ss) const
 
 int TableMeta::deserialize(std::istream &is)
 {
-  Json::Value table_value;
+  Json::Value             table_value;
   Json::CharReaderBuilder builder;
-  std::string errors;
+  std::string             errors;
 
   std::streampos old_pos = is.tellg();
   if (!Json::parseFromStream(builder, is, &table_value, &errors)) {
@@ -298,14 +239,14 @@ int TableMeta::deserialize(std::istream &is)
     return -1;
   }
 
-  RC rc = RC::SUCCESS;
-  int field_num = fields_value.size();
+  RC                     rc        = RC::SUCCESS;
+  int                    field_num = fields_value.size();
   std::vector<FieldMeta> fields(field_num);
   for (int i = 0; i < field_num; i++) {
     FieldMeta &field = fields[i];
 
     const Json::Value &field_value = fields_value[i];
-    rc = FieldMeta::from_json(field_value, field);
+    rc                             = FieldMeta::from_json(field_value, field);
     if (rc != RC::SUCCESS) {
       LOG_ERROR("Failed to deserialize table meta. table name =%s", table_name.c_str());
       return -1;
@@ -318,7 +259,7 @@ int TableMeta::deserialize(std::istream &is)
   table_id_ = table_id;
   name_.swap(table_name);
   fields_.swap(fields);
-  record_size_ = fields_.back().offset() + fields_.back().len() - fields_.begin()->offset();
+  record_size_ = fields_.back().offset() + fields_.back().len() - fields_.begin()->offset()+4;
 
   const Json::Value &indexes_value = table_value[FIELD_INDEXES];
   if (!indexes_value.empty()) {
@@ -326,13 +267,13 @@ int TableMeta::deserialize(std::istream &is)
       LOG_ERROR("Invalid table meta. indexes is not array, json value=%s", fields_value.toStyledString().c_str());
       return -1;
     }
-    const int index_num = indexes_value.size();
+    const int              index_num = indexes_value.size();
     std::vector<IndexMeta> indexes(index_num);
     for (int i = 0; i < index_num; i++) {
       IndexMeta &index = indexes[i];
 
       const Json::Value &index_value = indexes_value[i];
-      rc = IndexMeta::from_json(*this, index_value, index);
+      rc                             = IndexMeta::from_json(*this, index_value, index);
       if (rc != RC::SUCCESS) {
         LOG_ERROR("Failed to deserialize table meta. table name=%s", table_name.c_str());
         return -1;

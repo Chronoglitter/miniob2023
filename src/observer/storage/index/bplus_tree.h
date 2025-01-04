@@ -21,7 +21,6 @@ See the Mulan PSL v2 for more details. */
 #include <sstream>
 #include <functional>
 #include <memory>
-#include <vector>
 
 #include "sql/parser/value.h"
 #include "storage/record/record_manager.h"
@@ -30,6 +29,8 @@ See the Mulan PSL v2 for more details. */
 #include "sql/parser/parse_defs.h"
 #include "common/lang/comparator.h"
 #include "common/log/log.h"
+
+#define MAX_NUM_ATTR 32
 
 /**
  * @brief B+树的实现
@@ -51,91 +52,43 @@ enum class BplusTreeOperationType
  * @brief 属性比较(BplusTree)
  * @ingroup BPlusTree
  */
-class AttrComparator
+class AttrComparator 
 {
 public:
-  void init(const std::vector<AttrType> &type, const std::vector<int> &length, const std::vector<int> &attr_id)
+  void init(AttrType type, int length)
   {
     attr_type_ = type;
     attr_length_ = length;
-    attr_id_ = attr_id;
   }
 
   int attr_length() const
   {
-    int len{0};
-    for (int i = 0; i < attr_length_.size(); ++i) {
-      len += attr_length_[i];
-    }
-
-    return len;
+    return attr_length_;
   }
 
   int operator()(const char *v1, const char *v2) const
   {
-    int pos{0};
-    int res{0};
-
-    // TODO(oldcb): 支持null类型
-    int bitmap_offset{0};
-    ASSERT(attr_length_.size() > 0, "error");
-    for (auto iter = attr_length_.begin(); iter != std::prev(attr_length_.end()); ++iter) {
-      bitmap_offset += *iter;
-    }
-    common::Bitmap v1_null_bitmap(const_cast<char *>(v1) + bitmap_offset, attr_length_.back());
-    common::Bitmap v2_null_bitmap(const_cast<char *>(v2) + bitmap_offset, attr_length_.back());
-
-    for (int i = 0; i < attr_type_.size() - 1; ++i) {
-      if (v2_null_bitmap.get_bit(attr_id_[i])) {
-        // if (v1_null_bitmap.get_bit(attr_id_[i])) {
-        //   continue;   // NULL和NULL相等
-        // } else {
-        return -1;  // NULL比其它值(不包括NULL)大
-        // }
-      } else if (v1_null_bitmap.get_bit(attr_id_[i])) {
-        return 1;
+    switch (attr_type_) {
+      case DATES:
+      case INTS: {
+        return common::compare_int((void *)v1, (void *)v2);
+      } break;
+      case FLOATS: {
+        return common::compare_float((void *)v1, (void *)v2);
       }
-      switch (attr_type_[i]) {
-        case INTS: {
-          res = common::compare_int((void *)(pos + v1), (void *)(pos + v2));
-        } break;
-        case FLOATS: {
-          res = common::compare_float((void *)(pos + v1), (void *)(pos + v2));
-          break;
-        }
-        case CHARS: {
-          res = common::compare_string((void *)(pos + v1), attr_length_[i], (void *)(pos + v2), attr_length_[i]);
-          break;
-        }
-        case DATES: {
-          res = common::compare_date((void *)(pos + v1), (void *)(pos + v2));
-          break;
-        }
-        case TEXTS: {
-          // TODO(oldcb): TEXTS的索引比较
-          LOG_ERROR("暂且不支持. %d", attr_type_[i]);
-          res = common::compare_string((void *)(pos + v1), attr_length_[i], (void *)(pos + v2), attr_length_[i]);
-          break;
-        }
-        default: {
-          ASSERT(false, "unknown attr type. %d", attr_type_[i]);
-          LOG_ERROR("unknown attr type. %d", attr_type_[i]);
-          return 0;
-        }
+      case CHARS: {
+        return common::compare_string((void *)v1, attr_length_, (void *)v2, attr_length_);
       }
-      pos += attr_length_[i];
-
-      if (res != 0) {
-        return res;
+      default: {
+        ASSERT(false, "unknown attr type. %d", attr_type_);
+        return 0;
       }
     }
-    return 0;
   }
 
 private:
-  std::vector<int> attr_id_;         // 各字段对应在表中是第几位
-  std::vector<AttrType> attr_type_;  // 将多个字段看成一个, 采用字典序进行比较
-  std::vector<int> attr_length_;
+  AttrType attr_type_;
+  int attr_length_;
 };
 
 /**
@@ -143,53 +96,77 @@ private:
  * @details BplusTree的键值除了字段属性，还有RID，是为了避免属性值重复而增加的。
  * @ingroup BPlusTree
  */
-class KeyComparator
+class KeyComparator 
 {
 public:
-  // 测试需要该接口
-  void init(const AttrType &type, int length, bool is_unique = false)
+  void init(AttrType type, int length)
   {
-    is_unique_ = is_unique;
-    const std::vector<int> attr_id;  // do nothing
-    attr_comparator_.init(std::vector<AttrType>{type}, std::vector<int>{length}, attr_id);
+    attr_types_.push_back(type);
+    attr_lengths_.push_back(length);
+    offset += length;
+    AttrComparator attr_comparator_;
+    attr_comparator_.init(type, length);
+    attr_comparators_.push_back(attr_comparator_);
   }
 
-  void init(const std::vector<AttrType> &type, const std::vector<int> &length, const std::vector<int> &attr_id,
-      bool is_unique = false)
+  void init(const std::vector<const FieldMeta*>  field_meta_list)
   {
-    is_unique_ = is_unique;
-    attr_comparator_.init(type, length, attr_id);
+    for(const FieldMeta* fieldMeta : field_meta_list){
+      this->init(fieldMeta->type(),fieldMeta->len());
+    }
   }
 
-  const AttrComparator &attr_comparator() const { return attr_comparator_; }
+  const AttrComparator &attr_comparator(int index = 0) const
+  {
+    return attr_comparators_[index];
+  }
+
+  int compare(const char *v1, const char *v2) const{
+    int result = 0;
+    int attr_offset = 0;
+    for(int i =0;i<attr_comparators_.size();i++){
+      result = attr_comparators_[i](v1+attr_offset, v2+attr_offset);
+      if (result != 0)
+        return result;
+      attr_offset += attr_lengths_[i];
+    }
+    return result;
+  }
 
   int operator()(const char *v1, const char *v2) const
   {
-    int result = attr_comparator_(v1, v2);
-
-    // 如果是唯一索引, 那么判断树中节点的唯一依据是字段值
-    if (is_unique_ || result != 0) {
-      return result;
+    // int result = attr_comparator_(v1, v2);
+    // if (result != 0) {
+    //   return result;
+    // }
+    int result = 0;
+    int attr_offset = 0;
+    for(int i =0;i<attr_comparators_.size();i++){
+      result = attr_comparators_[i](v1+attr_offset, v2+attr_offset);
+      if (result != 0)
+        return result;
+      attr_offset += attr_lengths_[i];
     }
-
-    const RID *rid1 = (const RID *)(v1 + attr_comparator_.attr_length());
-    const RID *rid2 = (const RID *)(v2 + attr_comparator_.attr_length());
+    const RID *rid1 = (const RID *)(v1 + offset);
+    const RID *rid2 = (const RID *)(v2 + offset);
     return RID::compare(rid1, rid2);
   }
 
 private:
-  bool is_unique_ = false;
-  AttrComparator attr_comparator_;
+  vector<AttrComparator> attr_comparators_;
+  vector<AttrType> attr_types_;
+  vector<int> attr_lengths_;
+  int offset = 0;
 };
 
 /**
  * @brief 属性打印,调试使用(BplusTree)
  * @ingroup BPlusTree
  */
-class AttrPrinter
+class AttrPrinter 
 {
 public:
-  void init(const std::vector<AttrType> &type, const std::vector<int> &length)
+  void init(AttrType type, int length)
   {
     attr_type_ = type;
     attr_length_ = length;
@@ -197,74 +174,87 @@ public:
 
   int attr_length() const
   {
-    int len{0};
-    for (int i = 0; i < attr_length_.size(); ++i) {
-      len += attr_length_[i];
-    }
-
-    return len;
+    return attr_length_;
   }
 
   std::string operator()(const char *v) const
   {
-    for (int i = 0; i < attr_type_.size(); ++i) {
-      switch (attr_type_[i]) {
-        case INTS: {
-          return std::to_string(*(int *)v);
-        } break;
-        case FLOATS: {
-          return std::to_string(*(float *)v);
-        }
-        case CHARS:
-        case TEXTS: {
-          std::string str;
-          for (int j = 0; j < attr_length_[i]; j++) {
-            if (v[j] == 0) {
-              break;
-            }
-            str.push_back(v[j]);
+    switch (attr_type_) {
+      case DATES:
+      case INTS: {
+        return std::to_string(*(int *)v);
+      } break;
+      case FLOATS: {
+        return std::to_string(*(float *)v);
+      }
+      case CHARS: {
+        std::string str;
+        for (int i = 0; i < attr_length_; i++) {
+          if (v[i] == 0) {
+            break;
           }
-          return str;
+          str.push_back(v[i]);
         }
-        case DATES: {
-          return std::to_string(*(int *)v);
-        }
-        default: {
-          ASSERT(false, "unknown attr type. %d", attr_type_);
-        }
+        return str;
+      }
+      default: {
+        ASSERT(false, "unknown attr type. %d", attr_type_);
       }
     }
     return std::string();
   }
 
 private:
-  std::vector<AttrType> attr_type_;
-  std::vector<int> attr_length_;
+  AttrType attr_type_;
+  int attr_length_;
 };
 
 /**
  * @brief 键值打印,调试使用(BplusTree)
  * @ingroup BPlusTree
  */
-class KeyPrinter
+class KeyPrinter 
 {
 public:
-  void init(const std::vector<AttrType> &type, const std::vector<int> &length) { attr_printer_.init(type, length); }
+  void init(AttrType type, int length)
+  {
+    attr_types_.push_back(type);
+    attr_lengths_.push_back(length);
+    offset += length;
+    AttrPrinter attr_printer_;
+    attr_printer_.init(type, length);
+    attr_printers_.push_back(attr_printer_);
+  }
 
-  const AttrPrinter &attr_printer() const { return attr_printer_; }
+  void init(const std::vector<const FieldMeta*>  field_meta_list)
+  {
+    for(const FieldMeta* fieldMeta : field_meta_list){
+      this->init(fieldMeta->type(),fieldMeta->len());
+    }
+  }
+  const AttrPrinter &attr_printer(int index =0) const
+  {
+    return attr_printers_[index];
+  }
 
   std::string operator()(const char *v) const
   {
     std::stringstream ss;
-    ss << "{key:" << attr_printer_(v) << ",";
+    for(AttrPrinter attr_printer_ : attr_printers_){
+      ss << "{key:" << attr_printer_(v) << ",";
+    }
 
-    const RID *rid = (const RID *)(v + attr_printer_.attr_length());
+
+    const RID *rid = (const RID *)(v + offset);
     ss << "rid:{" << rid->to_string() << "}}";
     return ss.str();
   }
 
 private:
-  AttrPrinter attr_printer_;
+  vector<AttrPrinter> attr_printers_;
+  vector<AttrType> attr_types_;
+  vector<int> attr_lengths_;
+  int offset = 0;
 };
 
 /**
@@ -273,48 +263,30 @@ private:
  * @details this is the first page of bplus tree.
  * only one field can be supported, can you extend it to multi-fields?
  */
-struct IndexFileHeader
+struct IndexFileHeader 
 {
   IndexFileHeader()
   {
     memset(this, 0, sizeof(IndexFileHeader));
     root_page = BP_INVALID_PAGE_NUM;
   }
-
-  static constexpr int MAX_NUM = 15;
-
-  // TODO
-  bool is_unique;
   PageNum root_page;          ///< 根节点在磁盘中的页号
   int32_t internal_max_size;  ///< 内部节点最大的键值对数
   int32_t leaf_max_size;      ///< 叶子节点最大的键值对数
+  int32_t attr_length[MAX_NUM_ATTR];        ///< 键值的长度
   int32_t key_length;         ///< attr length + sizeof(RID)
-  // 注意最后一个对应bitmap
-  int32_t attr_num;              ///< 键值的数量
-  int32_t attr_length[MAX_NUM];  ///< 键值的长度
-  int32_t attr_id[MAX_NUM];      ///< 标识该列在record中的位置
-  AttrType attr_type[MAX_NUM];   ///< 键值的类型
-
+  AttrType attr_type[MAX_NUM_ATTR];         ///< 键值的类型
+  int32_t nums=0;
+  int32_t attr_len;
   const std::string to_string()
   {
     std::stringstream ss;
 
-    ss << "root_page:" << root_page << ","
+    ss << "attr nums:" << nums << ","
+       << "key_length:" << key_length << ","
+       << "root_page:" << root_page << ","
        << "internal_max_size:" << internal_max_size << ","
-       << "leaf_max_size:" << leaf_max_size << ","
-       << "key_length:" << key_length << "\n";
-
-    ss << "attr_length:" << attr_length[0];
-    for (int i = 1; i < attr_num; ++i) {
-      ss << ", :" << attr_length[1];
-    }
-    ss << "\n";
-
-    ss << "attr_type:" << attr_type[0];
-    for (int i = 1; i < attr_num; ++i) {
-      ss << ", :" << attr_type[1];
-    }
-    ss << ";";
+       << "leaf_max_size:" << leaf_max_size << ";";
 
     return ss.str();
   }
@@ -326,14 +298,14 @@ struct IndexFileHeader
  * @code
  * storage format:
  * | page type | item number | parent page id |
- * @endcode
+ * @endcode 
  */
-struct IndexNode
+struct IndexNode 
 {
   static constexpr int HEADER_SIZE = 12;
 
-  bool is_leaf;
-  int key_num;
+  bool    is_leaf;
+  int     key_num;
   PageNum parent;
 };
 
@@ -344,13 +316,13 @@ struct IndexNode
  * storage format:
  * | common header | prev page id | next page id |
  * | key0, rid0 | key1, rid1 | ... | keyn, ridn |
- * @endcode
+ * @endcode 
  * the key is in format: the key value of record and rid.
  * so the key in leaf page must be unique.
  * the value is rid.
  * can you implenment a cluster index ?
  */
-struct LeafIndexNode : public IndexNode
+struct LeafIndexNode : public IndexNode 
 {
   static constexpr int HEADER_SIZE = IndexNode::HEADER_SIZE + 4;
 
@@ -372,7 +344,7 @@ struct LeafIndexNode : public IndexNode
  * the first key is ignored(key0).
  * so it will waste space, can you fix this?
  */
-struct InternalIndexNode : public IndexNode
+struct InternalIndexNode : public IndexNode 
 {
   static constexpr int HEADER_SIZE = IndexNode::HEADER_SIZE;
 
@@ -388,7 +360,7 @@ struct InternalIndexNode : public IndexNode
  * IndexNodeHandler 负责对IndexNode做各种操作。
  * 作为一个类来说，虚函数会影响“结构体”真实的内存布局，所以将数据存储与操作分开
  */
-class IndexNodeHandler
+class IndexNodeHandler 
 {
 public:
   IndexNodeHandler(const IndexFileHeader &header, Frame *frame);
@@ -397,14 +369,14 @@ public:
   void init_empty(bool leaf);
 
   bool is_leaf() const;
-  int key_size() const;
-  int value_size() const;
-  int item_size() const;
+  int  key_size() const;
+  int  value_size() const;
+  int  item_size() const;
 
   void increase_size(int n);
-  int size() const;
-  int max_size() const;
-  int min_size() const;
+  int  size() const;
+  int  max_size() const;
+  int  min_size() const;
   void set_parent_page_num(PageNum page_num);
   PageNum parent_page_num() const;
   PageNum page_num() const;
@@ -425,7 +397,7 @@ protected:
  * @brief 叶子节点的操作
  * @ingroup BPlusTree
  */
-class LeafIndexNodeHandler : public IndexNodeHandler
+class LeafIndexNodeHandler : public IndexNodeHandler 
 {
 public:
   LeafIndexNodeHandler(const IndexFileHeader &header, Frame *frame);
@@ -446,7 +418,7 @@ public:
 
   void insert(int index, const char *key, const char *value);
   void remove(int index);
-  int remove(const char *key, const KeyComparator &comparator);
+  int  remove(const char *key, const KeyComparator &comparator);
   RC move_half_to(LeafIndexNodeHandler &other, DiskBufferPool *bp);
   RC move_first_to_end(LeafIndexNodeHandler &other, DiskBufferPool *disk_buffer_pool);
   RC move_last_to_front(LeafIndexNodeHandler &other, DiskBufferPool *bp);
@@ -475,7 +447,7 @@ private:
  * @brief 内部节点的操作
  * @ingroup BPlusTree
  */
-class InternalIndexNodeHandler : public IndexNodeHandler
+class InternalIndexNodeHandler : public IndexNodeHandler 
 {
 public:
   InternalIndexNodeHandler(const IndexFileHeader &header, Frame *frame);
@@ -504,8 +476,10 @@ public:
    * @param[out] found 如果是有效指针，将会返回当前是否存在指定的键值
    * @param[out] insert_position 如果是有效指针，将会返回可以插入指定键值的位置
    */
-  int lookup(
-      const KeyComparator &comparator, const char *key, bool *found = nullptr, int *insert_position = nullptr) const;
+  int lookup(const KeyComparator &comparator, 
+             const char *key, 
+             bool *found = nullptr, 
+             int *insert_position = nullptr) const;
 
   RC move_to(InternalIndexNodeHandler &other, DiskBufferPool *disk_buffer_pool);
   RC move_first_to_end(InternalIndexNodeHandler &other, DiskBufferPool *disk_buffer_pool);
@@ -537,18 +511,23 @@ private:
  * @brief B+树的实现
  * @ingroup BPlusTree
  */
-class BplusTreeHandler
+class BplusTreeHandler 
 {
 public:
   /**
    * 此函数创建一个名为fileName的索引。
    * attrType描述被索引属性的类型，attrLength描述被索引属性的长度
    */
-  RC create(const char *file_name, AttrType attr_type, int attr_length, bool is_unique, int internal_max_size = -1,
-      int leaf_max_size = -1);  // bplus_tree_test 单元测试需要该接口
-  RC create(const char *file_name, const std::vector<AttrType> &attr_type, const std::vector<int> &attr_length,
-      const std::vector<int> &attr_id, bool is_unique, int internal_max_size = -1, int leaf_max_size = -1);
+  RC create(const char *file_name, 
+            AttrType attr_type, 
+            int attr_length, 
+            int internal_max_size = -1, 
+            int leaf_max_size = -1);
 
+  RC create(const char *file_name, 
+           const std::vector<const FieldMeta*>,
+            int internal_max_size = -1, 
+            int leaf_max_size = -1);
   /**
    * 打开名为fileName的索引文件。
    * 如果方法调用成功，则indexHandle为指向被打开的索引句柄的指针。
@@ -583,7 +562,7 @@ public:
    * @param key_len user_key的长度
    * @param rid  返回值，记录记录所在的页面号和slot
    */
-  RC get_entry(const char *user_key, int key_len, std::list<RID> &rids);
+  RC get_entry(const std::vector<const char *> &user_keys, const std::vector<int> &key_lens, std::list<RID> &rids);
 
   RC sync();
 
@@ -593,6 +572,7 @@ public:
    * @note thread unsafe
    */
   bool validate_tree();
+  int attr_len();
 
 public:
   /**
@@ -614,13 +594,14 @@ private:
 protected:
   RC find_leaf(LatchMemo &latch_memo, BplusTreeOperationType op, const char *key, Frame *&frame);
   RC left_most_page(LatchMemo &latch_memo, Frame *&frame);
-  RC find_leaf_internal(LatchMemo &latch_memo, BplusTreeOperationType op,
-      const std::function<PageNum(InternalIndexNodeHandler &)> &child_page_getter, Frame *&frame);
-  RC crabing_protocal_fetch_page(
-      LatchMemo &latch_memo, BplusTreeOperationType op, PageNum page_num, bool is_root_page, Frame *&frame);
+  RC find_leaf_internal(LatchMemo &latch_memo, BplusTreeOperationType op, 
+                        const std::function<PageNum(InternalIndexNodeHandler &)> &child_page_getter, 
+                        Frame *&frame);
+  RC crabing_protocal_fetch_page(LatchMemo &latch_memo, BplusTreeOperationType op, PageNum page_num, bool is_root_page,
+                                 Frame *&frame);
 
-  RC insert_into_parent(
-      LatchMemo &latch_memo, PageNum parent_page, Frame *left_frame, const char *pkey, Frame &right_frame);
+  RC insert_into_parent(LatchMemo &latch_memo, PageNum parent_page, Frame *left_frame, const char *pkey, 
+                        Frame &right_frame);
 
   RC delete_entry_internal(LatchMemo &latch_memo, Frame *leaf_frame, const char *key);
 
@@ -648,15 +629,15 @@ private:
 
 protected:
   DiskBufferPool *disk_buffer_pool_ = nullptr;
-  bool header_dirty_ = false;  //
+  bool            header_dirty_ = false; // 
   IndexFileHeader file_header_;
 
   // 在调整根节点时，需要加上这个锁。
   // 这个锁可以使用递归读写锁，但是这里偷懒先不改
-  common::SharedMutex root_lock_;
+  common::SharedMutex   root_lock_;
 
-  KeyComparator key_comparator_;
-  KeyPrinter key_printer_;
+  KeyComparator   key_comparator_;
+  KeyPrinter      key_printer_;
 
   std::unique_ptr<common::MemPoolItem> mem_pool_item_;
 
@@ -669,7 +650,7 @@ private:
  * @brief B+树的扫描器
  * @ingroup BPlusTree
  */
-class BplusTreeScanner
+class BplusTreeScanner 
 {
 public:
   BplusTreeScanner(BplusTreeHandler &tree_handler);
@@ -684,7 +665,8 @@ public:
    * @param right_len right_user_key 的内存大小(只有在变长字段中才会关注)
    * @param right_inclusive 右边界的值是否包含在内
    */
-  RC open(const char *left_user_key, int left_len, bool left_inclusive, const char *right_user_key, int right_len,
+  RC open(const std::vector<const char *> &left_user_keys, const std::vector<int> &left_lens, 
+      bool left_inclusive, const std::vector<const char *> &right_user_keys, const std::vector<int> &right_lens, 
       bool right_inclusive);
 
   RC next_entry(RID &rid);
@@ -695,7 +677,7 @@ private:
   /**
    * 如果key的类型是CHARS, 扩展或缩减user_key的大小刚好是schema中定义的大小
    */
-  RC fix_user_key(const char *user_key, int key_len, bool want_greater, char **fixed_key, bool *should_inclusive);
+  RC fix_user_key(const char *user_key, int key_len, bool want_greater, char **fixed_key, bool *should_inclusive,int index);
 
   void fetch_item(RID &rid);
   bool touch_end();

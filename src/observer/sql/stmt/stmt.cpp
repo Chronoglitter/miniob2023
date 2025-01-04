@@ -14,8 +14,7 @@ See the Mulan PSL v2 for more details. */
 
 #include "common/log/log.h"
 #include "sql/parser/parse_defs.h"
-#include "sql/stmt/create_table_select_stmt.h"
-#include "sql/stmt/create_view_stmt.h"
+#include "sql/stmt/select_stmtV2.h"
 #include "sql/stmt/stmt.h"
 #include "sql/stmt/insert_stmt.h"
 #include "sql/stmt/delete_stmt.h"
@@ -34,8 +33,8 @@ See the Mulan PSL v2 for more details. */
 #include "sql/stmt/set_variable_stmt.h"
 #include "sql/stmt/load_data_stmt.h"
 #include "sql/stmt/calc_stmt.h"
-
-RC Stmt::create_stmt(Db *db, ParsedSqlNode &sql_node, Stmt *&stmt)
+#include "sql/stmt/select_agg_stmt.h"
+RC Stmt::create_stmt(Db *db, ParsedSqlNode &sql_node, Stmt *&stmt,SQLStageEvent *sql_event)
 {
   stmt = nullptr;
 
@@ -47,12 +46,15 @@ RC Stmt::create_stmt(Db *db, ParsedSqlNode &sql_node, Stmt *&stmt)
       return DeleteStmt::create(db, sql_node.deletion, stmt);
     }
     case SCF_SELECT: {
-      return SelectStmt::create(db, sql_node.selection, {}, stmt);
+      // if(sql_node.selection.hasAgg)
+      //   return SelectAggStmt::create(db, sql_node.selection, stmt);
+      // else
+      //   return SelectStmt::create(db, sql_node.selection, stmt);
+      return SelectStmtV2::create(db, sql_node.selection, stmt);
     }
-    case SCF_UPDATE: {
-      return UpdateStmt::create(db, sql_node.update, stmt);
+    case SCF_UPDATE:{
+      return UpdateStmt::create(db, sql_node.update,stmt);
     }
-
     case SCF_EXPLAIN: {
       return ExplainStmt::create(db, sql_node.explain, stmt);
     }
@@ -63,14 +65,6 @@ RC Stmt::create_stmt(Db *db, ParsedSqlNode &sql_node, Stmt *&stmt)
 
     case SCF_CREATE_TABLE: {
       return CreateTableStmt::create(db, sql_node.create_table, stmt);
-    }
-
-    case SCF_CREATE_TABLE_SELECT: {
-      return CreateTableSelectStmt::create(db, sql_node.create_table_select, stmt);
-    }
-
-    case SCF_CREATE_VIEW: {
-      return CreateViewStmt::create(db, sql_node.create_view, stmt);
     }
 
     case SCF_DROP_TABLE: {
@@ -111,7 +105,7 @@ RC Stmt::create_stmt(Db *db, ParsedSqlNode &sql_node, Stmt *&stmt)
     }
 
     case SCF_CALC: {
-      return CalcStmt::create(sql_node, stmt);
+      return CalcStmt::create(sql_node.calc, stmt);
     }
 
     default: {

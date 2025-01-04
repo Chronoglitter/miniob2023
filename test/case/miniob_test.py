@@ -724,7 +724,6 @@ class TestSuite:
       return True
     else:
       result = self.__compare_files(result_tmp_file_name, result_file_name)
-      print(result_tmp_file_name, result_file_name)
       if not GlobalConfig.debug:
         #os.remove(result_tmp_file_name)
         pass
@@ -1024,7 +1023,7 @@ def compile(work_dir: str, build_dir: str, cmake_args: str, make_args: str, rebu
   make_command = ["make", "--silent", "-C", build_path]
   if isinstance(make_args, str):
     if not make_args:
-      make_command.append('-j4')
+      make_command.append('-j')
     else:
       args = make_args.split(';')
       for arg in args:

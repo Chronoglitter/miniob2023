@@ -25,13 +25,16 @@ See the Mulan PSL v2 for more details. */
 class IndexScanPhysicalOperator : public PhysicalOperator
 {
 public:
-  IndexScanPhysicalOperator(Table *table, Index *index, bool readonly, const std::vector<Value> &left_values,
-      bool left_inclusive, const std::vector<Value> &right_values, bool right_inclusive,
-      const std::vector<FieldMeta> &value_metas);
+  IndexScanPhysicalOperator(Table *table, Index *index, bool readonly, 
+      const Value *left_value, bool left_inclusive,
+      const Value *right_value, bool right_inclusive);
 
   virtual ~IndexScanPhysicalOperator() = default;
 
-  PhysicalOperatorType type() const override { return PhysicalOperatorType::INDEX_SCAN; }
+  PhysicalOperatorType type() const override
+  {
+    return PhysicalOperatorType::INDEX_SCAN;
+  }
 
   std::string param() const override;
 
@@ -48,7 +51,7 @@ private:
   RC filter(RowTuple &tuple, bool &result);
 
 private:
-  Trx *trx_ = nullptr;
+  Trx * trx_ = nullptr;
   Table *table_ = nullptr;
   Index *index_ = nullptr;
   bool readonly_ = false;
@@ -59,9 +62,8 @@ private:
   Record current_record_;
   RowTuple tuple_;
 
-  std::vector<Value> left_values_;
-  std::vector<Value> right_values_;
-  std::vector<FieldMeta> value_metas_;  // 我们需要知道左右 value 在 table 中属于第几个字段, 以此才能设置 null 的 bitmap
+  Value left_value_;
+  Value right_value_;
   bool left_inclusive_ = false;
   bool right_inclusive_ = false;
 

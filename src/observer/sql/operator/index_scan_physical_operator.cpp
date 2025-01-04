@@ -13,25 +13,26 @@ See the Mulan PSL v2 for more details. */
 //
 
 #include "sql/operator/index_scan_physical_operator.h"
-#include "common/lang/bitmap.h"
-#include "sql/parser/value.h"
 #include "storage/index/index.h"
-#include "storage/record/record.h"
 #include "storage/trx/trx.h"
-#include <numeric>
 
-IndexScanPhysicalOperator::IndexScanPhysicalOperator(Table *table, Index *index, bool readonly,
-    const std::vector<Value> &left_values, bool left_inclusive, const std::vector<Value> &right_values,
-    bool right_inclusive, const std::vector<FieldMeta> &value_metas)
-    : table_(table),
-      index_(index),
-      readonly_(readonly),
-      left_values_(left_values),
-      right_values_(right_values),
-      value_metas_(value_metas),
-      left_inclusive_(left_inclusive),
+IndexScanPhysicalOperator::IndexScanPhysicalOperator(
+    Table *table, Index *index, bool readonly, 
+    const Value *left_value, bool left_inclusive, 
+    const Value *right_value, bool right_inclusive)
+    : table_(table), 
+      index_(index), 
+      readonly_(readonly), 
+      left_inclusive_(left_inclusive), 
       right_inclusive_(right_inclusive)
-{}
+{
+  if (left_value) {
+    left_value_ = *left_value;
+  }
+  if (right_value) {
+    right_value_ = *right_value;
+  }
+}
 
 RC IndexScanPhysicalOperator::open(Trx *trx)
 {
@@ -39,47 +40,12 @@ RC IndexScanPhysicalOperator::open(Trx *trx)
     return RC::INTERNAL;
   }
 
-  auto make_key = [this](const std::vector<Value> &values) -> char * {
-    // 注意: 要附加上相应的bitmap
-
-    // 计算values的长度
-    int total_length =
-        std::accumulate(value_metas_.begin(), value_metas_.end(), 0, [](int sum, const FieldMeta &field_meta) {
-          return sum + field_meta.len();
-        });
-
-    // 附加上bitmap的长度
-    const FieldMeta *null_field = this->table_->table_meta().null_field();
-    total_length += null_field->len();
-
-    char *key = new char[total_length];
-    int offset{0};
-    for (int i = 0; i < values.size(); ++i) {
-      memcpy(key + offset, values[i].data(), value_metas_[i].len());
-      offset += values[i].length();
-    }
-    memset(key + offset, 0, null_field->len());
-    common::Bitmap bitmap(key + offset, null_field->len());
-
-    // 遍历 value 值, 设置对应 null 的 bitmap 为 1
-    for (int i = 0; i < values.size(); ++i) {
-      if (values[i].attr_type() == AttrType::NULLS) {
-        bitmap.set_bit(value_metas_[i].id());
-      }
-    }
-
-    return key;
-  };
-
-  char *left_key = make_key(left_values_);
-  char *right_key = make_key(right_values_);
-
-  IndexScanner *index_scanner = index_->create_scanner(
-      left_key, left_values_[0].length(), left_inclusive_, right_key, right_values_[0].length(), right_inclusive_);
-
-  delete[] left_key;
-  delete[] right_key;
-
+  IndexScanner *index_scanner = index_->create_scanner(std::vector<const char*>{left_value_.data()},
+      std::vector<int>{left_value_.length()},
+      left_inclusive_,
+      std::vector<const char*>{right_value_.data()},
+      std::vector<int>{right_value_.length()},
+      right_inclusive_);
   if (nullptr == index_scanner) {
     LOG_WARN("failed to create index scanner");
     return RC::INTERNAL;
@@ -93,7 +59,6 @@ RC IndexScanPhysicalOperator::open(Trx *trx)
   }
   index_scanner_ = index_scanner;
 
-  // tuple的schema应该与tuple_schema尽量保持一致, tuple_schema只包含了用户字段， tuple是用户字段+null字段
   tuple_.set_schema(table_, table_->table_meta().field_metas());
 
   trx_ = trx;

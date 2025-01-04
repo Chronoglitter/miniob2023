@@ -57,16 +57,9 @@ RecordPageIterator::~RecordPageIterator() {}
 void RecordPageIterator::init(RecordPageHandler &record_page_handler, SlotNum start_slot_num /*=0*/)
 {
   record_page_handler_ = &record_page_handler;
-  page_num_ = record_page_handler.get_page_num();
+  page_num_            = record_page_handler.get_page_num();
   bitmap_.init(record_page_handler.bitmap_, record_page_handler.page_header_->record_capacity);
   next_slot_num_ = bitmap_.next_setted_bit(start_slot_num);
-
-  // 注意: 如果是为text字段设计的溢出页则应跳过该页面
-  // 这里设计这个iterator 的 next_slot_num_ 为 -1 即可
-  PageHeader *page_header = record_page_handler_->page_header_;
-  if (page_header->is_overflow) {
-    next_slot_num_ = -1;
-  }
 }
 
 bool RecordPageIterator::has_next() { return -1 != next_slot_num_; }
@@ -74,8 +67,8 @@ bool RecordPageIterator::has_next() { return -1 != next_slot_num_; }
 RC RecordPageIterator::next(Record &record)
 {
   record.set_rid(page_num_, next_slot_num_);
-  record.set_data(record_page_handler_->get_record_data(record.rid().slot_num));
-
+  //这是真无语，初始化不知道把record size初始化一下？？？？？
+  record.set_data(record_page_handler_->get_record_data(record.rid().slot_num),record_page_handler_->record_size());
   if (next_slot_num_ >= 0) {
     next_slot_num_ = bitmap_.next_setted_bit(next_slot_num_ + 1);
   }
@@ -89,12 +82,8 @@ RecordPageHandler::~RecordPageHandler() { cleanup(); }
 RC RecordPageHandler::init(DiskBufferPool &buffer_pool, PageNum page_num, bool readonly)
 {
   if (disk_buffer_pool_ != nullptr) {
-    if (frame_->page_num() == page_num) {
-      LOG_WARN("Disk buffer pool has been opened for page_num %d.", page_num);
-      return RC::RECORD_OPENNED;
-    } else {
-      cleanup();
-    }
+    LOG_WARN("Disk buffer pool has been opened for page_num %d.", page_num);
+    return RC::RECORD_OPENNED;
   }
 
   RC ret = RC::SUCCESS;
@@ -111,9 +100,9 @@ RC RecordPageHandler::init(DiskBufferPool &buffer_pool, PageNum page_num, bool r
     frame_->write_latch();
   }
   disk_buffer_pool_ = &buffer_pool;
-  readonly_ = readonly;
-  page_header_ = (PageHeader *)(data);
-  bitmap_ = data + PAGE_HEADER_SIZE;
+  readonly_         = readonly;
+  page_header_      = (PageHeader *)(data);
+  bitmap_           = data + PAGE_HEADER_SIZE;
 
   LOG_TRACE("Successfully init page_num %d.", page_num);
   return ret;
@@ -136,9 +125,9 @@ RC RecordPageHandler::recover_init(DiskBufferPool &buffer_pool, PageNum page_num
 
   frame_->write_latch();
   disk_buffer_pool_ = &buffer_pool;
-  readonly_ = false;
-  page_header_ = (PageHeader *)(data);
-  bitmap_ = data + PAGE_HEADER_SIZE;
+  readonly_         = false;
+  page_header_      = (PageHeader *)(data);
+  bitmap_           = data + PAGE_HEADER_SIZE;
 
   buffer_pool.recover_page(page_num);
 
@@ -154,10 +143,10 @@ RC RecordPageHandler::init_empty_page(DiskBufferPool &buffer_pool, PageNum page_
     return ret;
   }
 
-  page_header_->record_num = 0;
-  page_header_->record_real_size = record_size;
-  page_header_->record_size = align8(record_size);
-  page_header_->record_capacity = page_record_capacity(BP_PAGE_DATA_SIZE, page_header_->record_size);
+  page_header_->record_num          = 0;
+  page_header_->record_real_size    = record_size;
+  page_header_->record_size         = align8(record_size);
+  page_header_->record_capacity     = page_record_capacity(BP_PAGE_DATA_SIZE, page_header_->record_size);
   page_header_->first_record_offset = align8(PAGE_HEADER_SIZE + page_bitmap_size(page_header_->record_capacity));
   this->fix_record_capacity();
   ASSERT(page_header_->first_record_offset + page_header_->record_capacity * page_header_->record_size <=
@@ -201,7 +190,7 @@ RC RecordPageHandler::insert_record(const char *data, RID *rid)
 
   // 找到空闲位置
   Bitmap bitmap(bitmap_, page_header_->record_capacity);
-  int index = bitmap.next_unsetted_bit(0);
+  int    index = bitmap.next_unsetted_bit(0);
   bitmap.set_bit(index);
   page_header_->record_num++;
 
@@ -241,6 +230,25 @@ RC RecordPageHandler::recover_insert_record(const char *data, const RID &rid)
   frame_->mark_dirty();
 
   return RC::SUCCESS;
+}
+RC RecordPageHandler::update_record(const Record *record)
+{
+  if (record->rid().slot_num >= page_header_->record_capacity) {
+    LOG_ERROR("Invalid slot_num %d, exceed page's record capacity, page_num %d.", record->rid().slot_num, frame_->page_num());
+    return RC::INVALID_ARGUMENT;
+  }
+  Bitmap bitmap(bitmap_, page_header_->record_capacity);
+  if (!bitmap.get_bit(record->rid().slot_num)) {
+    LOG_ERROR("Invalid slot_num %d, slot is empty, page_num %d.",
+	      record->rid().slot_num, frame_->page_num());
+    return RC::INTERNAL;
+  } else {
+    char *record_data = get_record_data(record->rid().slot_num);
+    memcpy(record_data, record->data(), page_header_->record_real_size);
+    bitmap.set_bit(record->rid().slot_num);
+    frame_->mark_dirty();
+    return RC::SUCCESS;
+  }
 }
 
 RC RecordPageHandler::delete_record(const RID *rid)
@@ -335,7 +343,7 @@ RC RecordFileHandler::init_free_pages()
   BufferPoolIterator bp_iterator;
   bp_iterator.init(*disk_buffer_pool_);
   RecordPageHandler record_page_handler;
-  PageNum current_page_num = 0;
+  PageNum           current_page_num = 0;
 
   while (bp_iterator.has_next()) {
     current_page_num = bp_iterator.next();
@@ -360,8 +368,8 @@ RC RecordFileHandler::insert_record(const char *data, int record_size, RID *rid)
   RC ret = RC::SUCCESS;
 
   RecordPageHandler record_page_handler;
-  bool page_found = false;
-  PageNum current_page_num = 0;
+  bool              page_found       = false;
+  PageNum           current_page_num = 0;
 
   // 当前要访问free_pages对象，所以需要加锁。在非并发编译模式下，不需要考虑这个锁
   lock_.lock();
@@ -420,6 +428,17 @@ RC RecordFileHandler::insert_record(const char *data, int record_size, RID *rid)
   return record_page_handler.insert_record(data, rid);
 }
 
+RC RecordFileHandler::update_record(const Record *record)
+{
+  RC                rc = RC::SUCCESS;
+  RecordPageHandler page_handler;
+  if ((rc = page_handler.init(*disk_buffer_pool_, record->rid().page_num,false)) != RC::SUCCESS) {
+    LOG_ERROR("Failed to init record page handler.page number=%d", record->rid().page_num);
+    return rc;
+  }
+  return page_handler.update_record(record);
+}
+
 RC RecordFileHandler::recover_insert_record(const char *data, int record_size, const RID &rid)
 {
   RC ret = RC::SUCCESS;
@@ -469,7 +488,7 @@ RC RecordFileHandler::get_record(RecordPageHandler &page_handler, const RID *rid
   }
 
   RC ret = page_handler.init(*disk_buffer_pool_, rid->page_num, readonly);
-  if (OB_FAIL(ret) && ret != RC::RECORD_OPENNED) {
+  if (OB_FAIL(ret)) {
     LOG_ERROR("Failed to init record page handler.page number=%d", rid->page_num);
     return ret;
   }
@@ -507,10 +526,10 @@ RC RecordFileScanner::open_scan(
 {
   close_scan();
 
-  table_ = table;
+  table_            = table;
   disk_buffer_pool_ = &buffer_pool;
-  trx_ = trx;
-  readonly_ = readonly;
+  trx_              = trx;
+  readonly_         = readonly;
 
   RC rc = bp_iterator_.init(buffer_pool);
   if (rc != RC::SUCCESS) {

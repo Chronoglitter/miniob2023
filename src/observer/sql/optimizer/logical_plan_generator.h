@@ -15,7 +15,6 @@ See the Mulan PSL v2 for more details. */
 #pragma once
 
 #include <memory>
-#include <vector>
 
 #include "common/rc.h"
 
@@ -25,11 +24,11 @@ class SelectStmt;
 class FilterStmt;
 class InsertStmt;
 class DeleteStmt;
-class UpdateStmt;
 class ExplainStmt;
 class LogicalOperator;
-struct OrderByUnit;
-
+class SelectAggStmt;
+class UpdateStmt;
+class SelectStmtV2;
 class LogicalPlanGenerator
 {
 public:
@@ -41,10 +40,11 @@ public:
 private:
   RC create_plan(CalcStmt *calc_stmt, std::unique_ptr<LogicalOperator> &logical_operator);
   RC create_plan(SelectStmt *select_stmt, std::unique_ptr<LogicalOperator> &logical_operator);
+  RC create_plan(SelectAggStmt *select_agg_stmt, std::unique_ptr<LogicalOperator> &logical_operator);
   RC create_plan(FilterStmt *filter_stmt, std::unique_ptr<LogicalOperator> &logical_operator);
   RC create_plan(InsertStmt *insert_stmt, std::unique_ptr<LogicalOperator> &logical_operator);
+  RC create_plan(UpdateStmt *updateStmt, std::unique_ptr<LogicalOperator> &logical_operator);
   RC create_plan(DeleteStmt *delete_stmt, std::unique_ptr<LogicalOperator> &logical_operator);
-  RC create_plan(UpdateStmt *update_stmt, std::unique_ptr<LogicalOperator> &logical_operator);
   RC create_plan(ExplainStmt *explain_stmt, std::unique_ptr<LogicalOperator> &logical_operator);
-  RC create_plan(std::vector<OrderByUnit> *orderbys, std::unique_ptr<LogicalOperator> &logical_operator);
+  RC create_plan(SelectStmtV2 *select_stmt, std::unique_ptr<LogicalOperator> &logical_operator);
 };

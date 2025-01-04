@@ -12,7 +12,6 @@ See the Mulan PSL v2 for more details. */
 // Created by Longda on 2021/4/13.
 //
 
-#include <cstddef>
 #include <string>
 #include <sstream>
 
@@ -23,15 +22,14 @@ See the Mulan PSL v2 for more details. */
 #include "event/storage_event.h"
 #include "event/sql_event.h"
 #include "event/session_event.h"
-#include "sql/parser/value.h"
-#include "sql/stmt/create_table_select_stmt.h"
-#include "sql/stmt/create_view_stmt.h"
+#include "sql/stmt/select_agg_stmt.h"
+#include "sql/stmt/select_stmtV2.h"
 #include "sql/stmt/stmt.h"
 #include "sql/stmt/select_stmt.h"
 #include "storage/default/default_handler.h"
 #include "sql/executor/command_executor.h"
-#include "sql/expr/expression.h"
 #include "sql/operator/calc_physical_operator.h"
+#include "storage/field/agg_field.h"
 
 using namespace std;
 using namespace common;
@@ -67,23 +65,80 @@ RC ExecuteStage::handle_request_with_physical_operator(SQLStageEvent *sql_event)
   unique_ptr<PhysicalOperator> &physical_operator = sql_event->physical_operator();
   ASSERT(physical_operator != nullptr, "physical operator should not be null");
 
-  SqlResult *sql_result = sql_event->session_event()->sql_result();
-  sql_result->set_tuple_schema(physical_operator->tuple_schema());
-  sql_result->set_operator(std::move(physical_operator));
+  // TODO 这里也可以优化一下，是否可以让physical operator自己设置tuple schema
+  TupleSchema schema;
+  switch (stmt->type()) {
+    case StmtType::SELECT: {
+      SelectStmtV2 *select_stmt = static_cast<SelectStmtV2 *>(stmt);
+      bool with_table_name = select_stmt->tables().size() > 1;
+      if(select_stmt->agg_fields().empty())
+        for (const Field &field : select_stmt->query_fields()) {
+          if (with_table_name) {
+            schema.append_cell(field.table_name(), field.field_name());
+          } else {
+            schema.append_cell(field.field_name());
+          }
+        }
+      else{
+        for (const AggField &field : select_stmt->agg_fields()) {
+        if (with_table_name) {
+          if(field.is_star())
+            schema.append_cell(field.table_name(), "*",field.aggOp());
+          else
+            schema.append_cell(field.table_name(), field.field_name(),field.aggOp());
+        } else {
+          if(field.is_star())
+            schema.append_cell("*",field.aggOp());
+          else
+            schema.append_cell(field.field_name(),field.aggOp());
+        }
+      }
+      }
+      // SelectStmt *select_stmt = static_cast<SelectStmt *>(stmt);
+      // bool with_table_name = select_stmt->tables().size() > 1;
 
-  // 除了处理物理算子
-  // CREATE_TABLE_SELECT 和 CREATE_VIEW 还需要执行创表
-  if (stmt->type() == StmtType::CREATE_TABLE_SELECT || stmt->type() == StmtType::CREATE_VIEW) {
-    SessionEvent *session_event = sql_event->session_event();
+      // for (const Field &field : select_stmt->query_fields()) {
+      //   if (with_table_name) {
+      //     schema.append_cell(field.table_name(), field.field_name());
+      //   } else {
+      //     schema.append_cell(field.field_name());
+      //   }
+      // }
+    } break;
+    case StmtType::SELECT_AGG :{
+      SelectAggStmt *select_agg_stmt = static_cast<SelectAggStmt *>(stmt);
+      bool with_table_name = select_agg_stmt->tables().size() > 1;
+            for (const AggField &field : select_agg_stmt->agg_fields()) {
+        if (with_table_name) {
+          if(field.is_star())
+            schema.append_cell(field.table_name(), "*",field.aggOp());
+          else
+            schema.append_cell(field.table_name(), field.field_name(),field.aggOp());
+        } else {
+          if(field.is_star())
+            schema.append_cell("*",field.aggOp());
+          else
+            schema.append_cell(field.field_name(),field.aggOp());
+        }
+      }
+    }break;
+    case StmtType::CALC: {
+      CalcPhysicalOperator *calc_operator = static_cast<CalcPhysicalOperator *>(physical_operator.get());
+      for (const unique_ptr<Expression> & expr : calc_operator->expressions()) {
+        schema.append_cell(expr->name().c_str());
+      }
+    } break;
 
-    Stmt *stmt = sql_event->stmt();
-    if (stmt != nullptr) {
-      CommandExecutor command_executor;
-      rc = command_executor.execute(sql_event);
-      session_event->sql_result()->set_return_code(rc);
-    } else {
-      return RC::INTERNAL;
-    }
+    case StmtType::EXPLAIN: {
+      schema.append_cell("Query Plan");
+    } break;
+    default: {
+      // 只有select返回结果
+    } break;
   }
+
+  SqlResult *sql_result = sql_event->session_event()->sql_result();
+  sql_result->set_tuple_schema(schema);
+  sql_result->set_operator(std::move(physical_operator));
   return rc;
 }

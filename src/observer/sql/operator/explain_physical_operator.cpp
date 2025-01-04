@@ -24,7 +24,13 @@ RC ExplainPhysicalOperator::open(Trx *)
   return RC::SUCCESS;
 }
 
-RC ExplainPhysicalOperator::close() { return RC::SUCCESS; }
+RC ExplainPhysicalOperator::close()
+{
+  for (std::unique_ptr<PhysicalOperator> &child_oper : children_) {
+    child_oper->close();
+  }
+  return RC::SUCCESS;
+}
 
 RC ExplainPhysicalOperator::next()
 {
@@ -56,7 +62,10 @@ RC ExplainPhysicalOperator::next()
   return RC::SUCCESS;
 }
 
-Tuple *ExplainPhysicalOperator::current_tuple() { return &tuple_; }
+Tuple *ExplainPhysicalOperator::current_tuple()
+{
+  return &tuple_;
+}
 
 /**
  * 递归打印某个算子

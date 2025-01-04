@@ -15,39 +15,64 @@ See the Mulan PSL v2 for more details. */
 #pragma once
 
 #include "common/rc.h"
-#include "sql/stmt/filter_stmt.h"
 #include "sql/stmt/stmt.h"
+#include <string>
+#include "sql/stmt/filter_stmt.h"
+#include "storage/field/field_meta.h"
+#include "subquery_helper.h"
 
 class Table;
-class Db;
 
 /**
  * @brief 更新语句
  * @ingroup Statement
  */
-class UpdateStmt : public Stmt
+class UpdateStmt : public Stmt 
 {
 public:
   UpdateStmt() = default;
-  UpdateStmt(Table *table, std::vector<std::unique_ptr<Expression>> &&values,
-      const std::vector<const FieldMeta *> &field_metas, FilterStmt *filter_stmt);
+  UpdateStmt(Table *table, std::vector<const FieldMeta *> field_metas , FilterStmt *filter_stmt , Value *values, int value_amount,bool b=false);
 
-  StmtType type() const override { return StmtType::UPDATE; }
+    StmtType type() const override
+  {
+    return StmtType::UPDATE;
+  }
+
 
 public:
-  static RC create(Db *db, UpdateSqlNode &update_sql, Stmt *&stmt);
+  static RC create(Db *db, const UpdateSqlNode &update_sql, Stmt *&stmt);
 
 public:
-  Table *table() const { return table_; }
-  std::vector<std::unique_ptr<Expression>> &values_exprs() { return value_exprs_; }
-  const std::vector<const FieldMeta *> &field_metas() const { return field_metas_; }
-  int value_amount() const { return value_exprs_.size(); }
-  FilterStmt *filter_stmt() const { return filter_stmt_; }
-
+  Table *table() const
+  {
+    return table_;
+  }
+  Value *values() const
+  {
+    return values_;
+  }
+  int value_amount() const
+  {
+    return value_amount_;
+  }
+  FilterStmt *filter_stmt() const
+  {
+    return filter_stmt_;
+  }
+  std::vector<const FieldMeta *> field_metas() const{
+    return field_metas_;
+  }
+  void set_has_multi_rows(bool has_multi_rows){
+    this->has_multi_rows_ = has_multi_rows;
+  }
+  bool has_multi_rows(){
+    return has_multi_rows_;
+  }
 private:
   Table *table_ = nullptr;
-  std::vector<std::unique_ptr<Expression>> value_exprs_;
+  Value *values_ = nullptr;
   std::vector<const FieldMeta *> field_metas_;
-
   FilterStmt *filter_stmt_ = nullptr;
+  int value_amount_ = 0;
+  bool has_multi_rows_ = false;
 };

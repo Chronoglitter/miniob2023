@@ -1,79 +1,259 @@
-
-/* Copyright (c) 2021 OceanBase and/or its affiliates. All rights reserved.
-miniob is licensed under Mulan PSL v2.
-You can use this software according to the terms and conditions of the Mulan PSL v2.
-You may obtain a copy of Mulan PSL v2 at:
-         http://license.coscl.org.cn/MulanPSL2
-THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
-EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
-MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
-See the Mulan PSL v2 for more details. */
-
+#include "common/log/log.h"
 #include "sql/operator/aggregation_physical_operator.h"
-#include "sql/expr/expression.h"
+#include "sql/parser/parse_defs.h"
+#include "sql/parser/value.h"
+#include "storage/field/agg_field.h"
+#include "storage/record/record.h"
 #include "storage/table/table.h"
-#include "event/sql_debug.h"
+#include <cstring>
+#include <vector>
+#include "common/lang/comparator.h"
 
-using namespace std;
-
-// 聚合，需要支持表达式
 RC AggregationPhysicalOperator::open(Trx *trx)
 {
   if (children_.empty()) {
-    return RC::INTERNAL;
-  }
-  // 投影表达式, 下面除了聚合，可能也有value
-  // 或者纯聚合
-  aggr_exprs_.clear();
-  for (const auto &project : projects_) {
-    AggretationExpr::get_aggrfuncexprs(project.get(), aggr_exprs_);
-  }
-  for (int i = 0; i < aggr_exprs_.size(); i++) {
-    auto aggr_expr = static_cast<AggretationExpr *>(aggr_exprs_[i]);
-    // 每个表达式都有值了
-    aggr_expr->clear_value();
-  }
-  // TODO: 这里除了聚合表达式，还可以是字段表达式，值表达式
-  ht_->init(aggr_exprs_);
-  ht_->clear();
-  const auto child_op = children_.front().get();
-  RC rc = child_op->open(trx);
-
-  AggregateKey key;
-  while ((rc = child_op->next()) == RC::SUCCESS) {
-    Tuple *tuple = child_op->current_tuple();
-    ht_->insert_combine(key, *tuple);
-  }
-  is_execute_ = false;
-  ht_->generate_aggregate_values();
-  if (rc == RC::RECORD_EOF) {
-    rc = RC::SUCCESS;
+    return RC::SUCCESS;
   }
 
-  return rc;
-}
-
-// 只能执行一次
-RC AggregationPhysicalOperator::next()
-{
-  if (is_execute_) {
-    return RC::RECORD_EOF;
+  PhysicalOperator *child = children_[0].get();
+  RC rc = child->open(trx);
+  if (rc != RC::SUCCESS) {
+    LOG_WARN("failed to open child operator: %s", strrc(rc));
+    return rc;
   }
-  AggregateKey key;
-  const auto &results = ht_->get_aggr_value(key).aggregates_;
-  assert(aggr_exprs_.size() == results.size());
-
-  for (int i = 0; i < results.size(); i++) {
-    auto aggr_expr = static_cast<AggretationExpr *>(aggr_exprs_[i]);
-    // 每个表达式都有值了
-    aggr_expr->set_value(results[i]);
+  
+  for(AggField agg_field : agg_fields_){
+    this->isFirst_.push_back(true);
+    if(agg_field.is_star()){
+      Value value (0);
+      result_.push_back(value);
+      index_.push_back(-1);
+      continue;
+    }
+    AttrType attrType = agg_field.attr_type();
+    AggOp op = agg_field.aggOp();
+    const char * table_name = agg_field.table_name();
+    const char * field_name = agg_field.field_name();
+    for(int i =0; i < fields_.size(); i++){
+      if (0 == strcmp(table_name, fields_[i].table_name()) && 0 == strcmp(field_name, fields_[i].field_name())) {
+        index_.push_back(i);
+        break;
+      }
+    }
+    if(op == COUNT_AGGOP){
+      Value value (0);
+      result_.push_back(value);
+      continue;
+    }
+    if(attrType == CHARS){
+      Value value ("");
+      value.set_null();
+      result_.push_back(value);
+    }
+    if(attrType == INTS){
+      Value value(0);
+      value.set_null();
+      result_.push_back(value);
+    }
+    if(attrType == FLOATS){
+      Value value((float)0);
+      value.set_null();
+      result_.push_back(value);
+    }
+    if(attrType == DATES){
+      Value value("");
+      value.set_null();
+      result_.push_back(value);
+    }
   }
-
-  aggregation_tuple_ = std::make_unique<AggregationTuple>(results);
-  exprssion_tuple_.set_expressions(&projects_);
-  exprssion_tuple_.set_tuple(aggregation_tuple_.get());
-  is_execute_ = true;
   return RC::SUCCESS;
 }
 
-Tuple *AggregationPhysicalOperator::current_tuple() { return &exprssion_tuple_; }
+RC AggregationPhysicalOperator::next()
+{
+  RC rc = RC::SUCCESS;
+  if (children_.empty()) {
+    return RC::RECORD_EOF;
+  }
+  PhysicalOperator *child = children_[0].get();
+  int count = 0;
+  std::vector<int> counts(agg_fields_.size());
+  bool hasOutput = false;
+  bool isFirst = true;
+  while (RC::SUCCESS == (rc = child->next())) {
+    Tuple *tuple = child->current_tuple();
+    if (nullptr == tuple) {
+      LOG_WARN("failed to get current record: %s", strrc(rc));
+      return rc;
+    }
+    if(!hasOutput)
+      hasOutput = true;
+    count++;
+    ProjectTuple *row_tuple = static_cast<ProjectTuple *>(tuple);
+    for(int i =0; i <agg_fields_.size(); i++){
+      int index = index_[i];
+      Value v;
+      row_tuple->cell_at(index,v);
+      if(agg_fields_[i].aggOp() == COUNT_AGGOP){
+        if(agg_fields_[i].is_star() || !v.isNull()){
+          result_[i].set_int(result_[i].get_int()+1);
+          continue;
+        }
+      }
+      if(!v.isNull())
+        counts[i]++;
+      if(agg_fields_[i].attr_type() == INTS){
+        int tmp = result_[i].get_int();
+        if(v.isNull()){
+          continue;
+        }
+
+        int cell_value = v.get_int();
+        switch (agg_fields_[i].aggOp())
+        {
+        case MAX_AGGOP:
+        {
+          if(isFirst_[i])
+            result_[i].set_int(cell_value);
+          else
+            result_[i].set_int(tmp > cell_value ? tmp : cell_value);
+          break;
+        }
+
+        case MIN_AGGOP:
+          if(isFirst_[i])
+            result_[i].set_int(cell_value);
+          else
+            result_[i].set_int(tmp < cell_value ? tmp : cell_value);
+          break; 
+        case SUM_AGGOP:
+        case AVG_AGGOP:
+          result_[i].set_int(tmp+cell_value);
+          break;        
+        default:
+          break;
+        }
+        isFirst_[i] = false;
+      }
+      if (agg_fields_[i].attr_type() == FLOATS){
+        float tmp = result_[i].get_float();
+        if(v.isNull()){
+          continue;
+        }
+        float cell_value = v.get_float();
+        switch (agg_fields_[i].aggOp())
+        {
+        case MAX_AGGOP:
+          if(isFirst_[i])
+            result_[i].set_int(cell_value);
+          else
+            result_[i].set_int(tmp > cell_value ? tmp : cell_value);
+          break;
+        case MIN_AGGOP:
+          if(isFirst_[i])
+            result_[i].set_int(cell_value);
+          else
+            result_[i].set_int(tmp < cell_value ? tmp : cell_value);
+          break; 
+        case SUM_AGGOP:
+        case AVG_AGGOP:
+          result_[i].set_float(tmp+cell_value);
+          break;        
+        default:
+          break;
+        }
+        isFirst_[i] = false;
+      }
+      if (agg_fields_[i].attr_type() == DATES){
+        int32_t tmp = result_[i].get_int32();
+        if(v.isNull())
+          continue;
+        int32_t cell_value = v.get_int32();
+        switch (agg_fields_[i].aggOp())
+        {
+        case MAX_AGGOP:
+          if(isFirst_[i])
+            result_[i].set_date(cell_value);
+          else
+            result_[i].set_date(tmp > cell_value ? tmp : cell_value);
+          break;
+        case MIN_AGGOP:
+          if(isFirst_[i])
+            result_[i].set_date(cell_value);
+          else
+            result_[i].set_date(tmp < cell_value ? tmp : cell_value);
+          break;       
+        default:
+          break;
+        }
+        isFirst_[i] = false;
+      }
+      if (agg_fields_[i].attr_type() == CHARS){
+        std::string tmp = result_[i].get_string();
+        if(v.isNull())
+          continue;
+        std::string cell_value = v.get_string();
+        int r = common::compare_string((void *)tmp.c_str(),tmp.length(),(void *)cell_value.c_str(),cell_value.length());
+        switch (agg_fields_[i].aggOp())
+        {
+        case MAX_AGGOP:
+          if(isFirst_[i])
+            result_[i].set_string(cell_value.c_str());
+          else
+            result_[i].set_string(r > 0  ? tmp.c_str() : cell_value.c_str());
+          break;
+        case MIN_AGGOP:
+          if(isFirst_[i])
+            result_[i].set_string(cell_value.c_str());
+          else
+          result_[i].set_string(r < 0? tmp.c_str() : cell_value.c_str());
+          break;       
+        default:
+          break;
+        }
+      }
+      isFirst_[i] = false;
+      }
+    }
+      for(int i =0; i <agg_fields_.size(); i++){
+        if(agg_fields_[i].aggOp() == AVG_AGGOP){
+          if(agg_fields_[i].attr_type() == INTS && !result_[i].isNull()){
+            result_[i].set_float(1.0*result_[i].get_int()/counts[i]);
+          }
+          if(agg_fields_[i].attr_type() == FLOATS && !result_[i].isNull()){
+            result_[i].set_float(result_[i].get_float()/counts[i]);
+          }
+        }
+      }
+
+  if (hasOutput)
+    rc = RC::SUCCESS;
+  return rc;
+}
+
+RC AggregationPhysicalOperator::close()
+{
+  RC rc = RC::SUCCESS;
+  if (children_.empty()) {
+    return RC::RECORD_EOF;
+  }
+  return RC::SUCCESS;
+}
+
+  
+
+  
+
+Tuple *AggregationPhysicalOperator::current_tuple()
+{
+  tuple_.set_cells(this->result_);
+  return &tuple_;
+}
+
+// void AggregationPhysicalOperator::add_projection(const AggField field)
+// {
+//   // 对单表来说，展示的(alias) 字段总是字段名称，
+//   // 对多表查询来说，展示的alias 需要带表名字
+//   TupleCellSpec *spec = new TupleCellSpec(field.table_name(),field.field_name(),nullptr,field.aggOp());
+//   tuple_.add_cell_spec(spec);
+// }
