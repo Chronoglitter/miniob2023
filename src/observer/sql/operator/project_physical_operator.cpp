@@ -12,16 +12,26 @@ See the Mulan PSL v2 for more details. */
 // Created by WangYunlai on 2022/07/01.
 //
 
-#include "sql/operator/project_physical_operator.h"
 #include "common/log/log.h"
+#include "sql/operator/project_physical_operator.h"
 #include "storage/record/record.h"
 #include "storage/table/table.h"
 
-using namespace std;
-
-ProjectPhysicalOperator::ProjectPhysicalOperator(vector<unique_ptr<Expression>> &&expressions)
-  : expressions_(std::move(expressions)), tuple_(expressions_)
+ProjectPhysicalOperator::ProjectPhysicalOperator(std::vector<std::unique_ptr<Expression>> &&exprs)
+    : exprs_(std::move(exprs))
 {
+  // for (const auto& expr: exprs_) {
+  //   if (expr->type() == ExprType::FIELD) {
+  //     auto field_expr = static_cast<FieldExpr*>(expr.get());
+  //     auto table = field_expr->field().table();
+  //     auto field_meta = field_expr->field().meta();
+  //     TupleCellSpec *spec = new TupleCellSpec(table->name(), field_meta->name(), field_meta->name());
+  //     tuple_.add_cell_spec(spec);
+  //   } else if (expr->type() == ExprType::ARITHMETIC) {
+  //     // tuple_.ad
+  //   }
+  // }
+  tuple_.set_expressions(&exprs_);
 }
 
 RC ProjectPhysicalOperator::open(Trx *trx)
@@ -31,7 +41,7 @@ RC ProjectPhysicalOperator::open(Trx *trx)
   }
 
   PhysicalOperator *child = children_[0].get();
-  RC                rc    = child->open(trx);
+  RC rc = child->open(trx);
   if (rc != RC::SUCCESS) {
     LOG_WARN("failed to open child operator: %s", strrc(rc));
     return rc;
@@ -59,12 +69,4 @@ Tuple *ProjectPhysicalOperator::current_tuple()
 {
   tuple_.set_tuple(children_[0]->current_tuple());
   return &tuple_;
-}
-
-RC ProjectPhysicalOperator::tuple_schema(TupleSchema &schema) const
-{
-  for (const unique_ptr<Expression> &expression : expressions_) {
-    schema.append_cell(expression->name());
-  }
-  return RC::SUCCESS;
 }

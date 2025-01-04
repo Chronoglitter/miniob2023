@@ -15,14 +15,16 @@ See the Mulan PSL v2 for more details. */
 #pragma once
 
 #include <stddef.h>
+#include <unordered_set>
+#include <mutex>
 #include <utility>
 
-#include "common/rc.h"
-#include "common/lang/mutex.h"
 #include "sql/parser/parse.h"
-#include "storage/field/field_meta.h"
+#include "storage/record/record.h"
 #include "storage/record/record_manager.h"
+#include "storage/field/field_meta.h"
 #include "storage/table/table.h"
+#include "common/rc.h"
 
 /**
  * @defgroup Transaction
@@ -30,16 +32,14 @@ See the Mulan PSL v2 for more details. */
  */
 
 class Db;
-class LogHandler;
-class LogEntry;
+class CLogManager;
+class CLogRecord;
 class Trx;
-class LogReplayer;
 
 /**
  * @brief 描述一个操作，比如插入、删除行等
  * @ingroup Transaction
  * @details 通常包含一个操作的类型，以及操作的对象和具体的数据
- * @note 这个名称太通用，可以考虑改成更具体的名称
  */
 class Operation
 {
@@ -61,9 +61,9 @@ public:
       : type_(type), table_(table), page_num_(rid.page_num), slot_num_(rid.slot_num)
   {}
 
-  Type    type() const { return type_; }
+  Type type() const { return type_; }
   int32_t table_id() const { return table_->table_id(); }
-  Table  *table() const { return table_; }
+  Table *table() const { return table_; }
   PageNum page_num() const { return page_num_; }
   SlotNum slot_num() const { return slot_num_; }
 
@@ -71,7 +71,7 @@ private:
   ///< 操作的哪张表。这里直接使用表其实并不准确，因为表中的索引也可能有日志
   Type type_;
 
-  Table  *table_ = nullptr;
+  Table *table_ = nullptr;
   PageNum page_num_;  // TODO use RID instead of page num and slot num
   SlotNum slot_num_;
 };
@@ -110,27 +110,22 @@ public:
   };
 
 public:
-  TrxKit()          = default;
+  TrxKit() = default;
   virtual ~TrxKit() = default;
 
-  virtual RC                       init()             = 0;
-  virtual const vector<FieldMeta> *trx_fields() const = 0;
-
-  virtual Trx *create_trx(LogHandler &log_handler) = 0;
-
-  /**
-   * @brief 创建一个事务，日志回放时使用
-   */
-  virtual Trx *create_trx(LogHandler &log_handler, int32_t trx_id) = 0;
-  virtual Trx *find_trx(int32_t trx_id)                            = 0;
-  virtual void all_trxes(vector<Trx *> &trxes)                     = 0;
+  virtual RC init() = 0;
+  virtual const std::vector<FieldMeta> *trx_fields() const = 0;
+  virtual Trx *create_trx(CLogManager *log_manager) = 0;
+  virtual Trx *create_trx(int32_t trx_id) = 0;
+  virtual Trx *find_trx(int32_t trx_id) = 0;
+  virtual void all_trxes(std::vector<Trx *> &trxes) = 0;
 
   virtual void destroy_trx(Trx *trx) = 0;
 
-  virtual LogReplayer *create_log_replayer(Db &db, LogHandler &log_handler) = 0;
-
 public:
   static TrxKit *create(const char *name);
+  static RC init_global(const char *name);
+  static TrxKit *instance();
 };
 
 /**
@@ -140,18 +135,19 @@ public:
 class Trx
 {
 public:
-  Trx()          = default;
+  Trx() = default;
   virtual ~Trx() = default;
 
-  virtual RC insert_record(Table *table, Record &record)                    = 0;
-  virtual RC delete_record(Table *table, Record &record)                    = 0;
-  virtual RC visit_record(Table *table, Record &record, ReadWriteMode mode) = 0;
+  virtual RC insert_record(Table *table, Record &record) = 0;
+  virtual RC delete_record(Table *table, Record &record) = 0;
+  virtual RC update_record(Table *table, Record &old_record, Record &new_record) = 0;
+  virtual RC visit_record(Table *table, Record &record, bool readonly) = 0;
 
   virtual RC start_if_need() = 0;
-  virtual RC commit()        = 0;
-  virtual RC rollback()      = 0;
+  virtual RC commit() = 0;
+  virtual RC rollback() = 0;
 
-  virtual RC redo(Db *db, const LogEntry &log_entry) = 0;
+  virtual RC redo(Db *db, const CLogRecord &log_record);
 
   virtual int32_t id() const = 0;
 };

@@ -14,8 +14,8 @@ See the Mulan PSL v2 for more details. */
 
 #pragma once
 
-#include "sql/operator/physical_operator.h"
 #include <vector>
+#include "sql/operator/physical_operator.h"
 
 /**
  * @brief 字符串列表物理算子
@@ -50,7 +50,7 @@ public:
   RC next() override
   {
     if (!started_) {
-      started_  = true;
+      started_ = true;
       iterator_ = strings_.begin();
     } else if (iterator_ != strings_.end()) {
       ++iterator_;
@@ -70,11 +70,12 @@ public:
       return nullptr;
     }
 
-    const StringList  &string_list = *iterator_;
+    const StringList &string_list = *iterator_;
     std::vector<Value> cells;
     for (const std::string &s : string_list) {
 
-      Value value(s.c_str());
+      Value value;
+      value.set_string(s.c_str());
       cells.push_back(value);
     }
     tuple_.set_cells(cells);
@@ -82,10 +83,10 @@ public:
   }
 
 private:
-  using StringList     = std::vector<std::string>;
+  using StringList = std::vector<std::string>;
   using StringListList = std::vector<StringList>;
-  StringListList           strings_;
+  StringListList strings_;
   StringListList::iterator iterator_;
-  bool                     started_ = false;
-  ValueListTuple           tuple_;
+  bool started_ = false;
+  ValueListTuple tuple_;
 };

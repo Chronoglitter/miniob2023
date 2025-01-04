@@ -15,10 +15,11 @@ See the Mulan PSL v2 for more details. */
 #pragma once
 
 #include "common/rc.h"
-#include "event/session_event.h"
-#include "event/sql_event.h"
-#include "sql/executor/sql_result.h"
 #include "sql/operator/string_list_physical_operator.h"
+#include "event/sql_event.h"
+#include "event/session_event.h"
+#include "sql/executor/sql_result.h"
+#include "session/session.h"
 
 /**
  * @brief Help语句执行器
@@ -27,7 +28,7 @@ See the Mulan PSL v2 for more details. */
 class HelpExecutor
 {
 public:
-  HelpExecutor()          = default;
+  HelpExecutor() = default;
   virtual ~HelpExecutor() = default;
 
   RC execute(SQLStageEvent *sql_event)

@@ -14,8 +14,8 @@ See the Mulan PSL v2 for more details. */
 
 #pragma once
 
-#include "storage/index/bplus_tree.h"
 #include "storage/index/index.h"
+#include "storage/index/bplus_tree.h"
 
 /**
  * @brief B+树索引
@@ -27,10 +27,10 @@ public:
   BplusTreeIndex() = default;
   virtual ~BplusTreeIndex() noexcept;
 
-  RC create(Table *table, const char *file_name, const IndexMeta &index_meta, const FieldMeta &field_meta);
-  RC open(Table *table, const char *file_name, const IndexMeta &index_meta, const FieldMeta &field_meta);
+  RC create(const char *file_name, const IndexMeta &index_meta, const std::vector<FieldMeta> &field_metas,
+      const std::vector<int> &field_ids);
+  RC open(const char *file_name, const IndexMeta &index_meta, const std::vector<FieldMeta> &field_metas);
   RC close();
-  void destroy() override;
 
   RC insert_entry(const char *record, const RID *rid) override;
   RC delete_entry(const char *record, const RID *rid) override;
@@ -44,8 +44,7 @@ public:
   RC sync() override;
 
 private:
-  bool             inited_ = false;
-  Table           *table_  = nullptr;
+  bool inited_ = false;
   BplusTreeHandler index_handler_;
 };
 

@@ -14,8 +14,8 @@ See the Mulan PSL v2 for more details. */
 
 #pragma once
 
-#include "sql/expr/tuple.h"
 #include "sql/operator/physical_operator.h"
+#include "sql/expr/tuple.h"
 #include "storage/record/record_manager.h"
 
 /**
@@ -25,8 +25,9 @@ See the Mulan PSL v2 for more details. */
 class IndexScanPhysicalOperator : public PhysicalOperator
 {
 public:
-  IndexScanPhysicalOperator(Table *table, Index *index, ReadWriteMode mode, const Value *left_value,
-      bool left_inclusive, const Value *right_value, bool right_inclusive);
+  IndexScanPhysicalOperator(Table *table, Index *index, bool readonly, const std::vector<Value> &left_values,
+      bool left_inclusive, const std::vector<Value> &right_values, bool right_inclusive,
+      const std::vector<FieldMeta> &value_metas);
 
   virtual ~IndexScanPhysicalOperator() = default;
 
@@ -47,20 +48,22 @@ private:
   RC filter(RowTuple &tuple, bool &result);
 
 private:
-  Trx               *trx_            = nullptr;
-  Table             *table_          = nullptr;
-  Index             *index_          = nullptr;
-  ReadWriteMode      mode_           = ReadWriteMode::READ_WRITE;
-  IndexScanner      *index_scanner_  = nullptr;
+  Trx *trx_ = nullptr;
+  Table *table_ = nullptr;
+  Index *index_ = nullptr;
+  bool readonly_ = false;
+  IndexScanner *index_scanner_ = nullptr;
   RecordFileHandler *record_handler_ = nullptr;
 
-  Record   current_record_;
+  RecordPageHandler record_page_handler_;
+  Record current_record_;
   RowTuple tuple_;
 
-  Value left_value_;
-  Value right_value_;
-  bool  left_inclusive_  = false;
-  bool  right_inclusive_ = false;
+  std::vector<Value> left_values_;
+  std::vector<Value> right_values_;
+  std::vector<FieldMeta> value_metas_;  // 我们需要知道左右 value 在 table 中属于第几个字段, 以此才能设置 null 的 bitmap
+  bool left_inclusive_ = false;
+  bool right_inclusive_ = false;
 
   std::vector<std::unique_ptr<Expression>> predicates_;
 };

@@ -14,8 +14,8 @@ See the Mulan PSL v2 for more details. */
 
 #pragma once
 
-#include "sql/optimizer/rewrite_rule.h"
 #include <vector>
+#include "sql/optimizer/rewrite_rule.h"
 
 /**
  * @brief 将一些谓词表达式下推到表数据扫描中
@@ -25,7 +25,7 @@ See the Mulan PSL v2 for more details. */
 class PredicatePushdownRewriter : public RewriteRule
 {
 public:
-  PredicatePushdownRewriter()          = default;
+  PredicatePushdownRewriter() = default;
   virtual ~PredicatePushdownRewriter() = default;
 
   RC rewrite(std::unique_ptr<LogicalOperator> &oper, bool &change_made) override;
@@ -33,5 +33,4 @@ public:
 private:
   RC get_exprs_can_pushdown(
       std::unique_ptr<Expression> &expr, std::vector<std::unique_ptr<Expression>> &pushdown_exprs);
-  bool is_empty_predicate(std::unique_ptr<Expression> &expr);
 };

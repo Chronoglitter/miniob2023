@@ -14,8 +14,7 @@ See the Mulan PSL v2 for more details. */
 
 #pragma once
 
-#include "common/types.h"
-#include "common/lang/string.h"
+#include <string>
 
 class Trx;
 class Db;
@@ -42,14 +41,14 @@ public:
   void operator=(Session &) = delete;
 
   const char *get_current_db_name() const;
-  Db         *get_current_db() const;
+  Db *get_current_db() const;
 
   /**
    * @brief 设置当前会话关联的数据库
    *
    * @param dbname 数据库名字
    */
-  void set_current_db(const string &dbname);
+  void set_current_db(const std::string &dbname);
 
   /**
    * @brief 设置当前事务为多语句模式，需要明确的指出提交或回滚
@@ -80,13 +79,6 @@ public:
   void set_sql_debug(bool sql_debug) { sql_debug_ = sql_debug; }
   bool sql_debug_on() const { return sql_debug_; }
 
-  void          set_execution_mode(const ExecutionMode mode) { execution_mode_ = mode; }
-  ExecutionMode get_execution_mode() const { return execution_mode_; }
-
-  bool used_chunk_mode() { return used_chunk_mode_; }
-
-  void set_used_chunk_mode(bool used_chunk_mode) { used_chunk_mode_ = used_chunk_mode; }
-
   /**
    * @brief 将指定会话设置到线程变量中
    *
@@ -100,17 +92,9 @@ public:
   static Session *current_session();
 
 private:
-  Db           *db_              = nullptr;
-  Trx          *trx_             = nullptr;
+  Db *db_ = nullptr;
+  Trx *trx_ = nullptr;
   SessionEvent *current_request_ = nullptr;  ///< 当前正在处理的请求
-
   bool trx_multi_operation_mode_ = false;  ///< 当前事务的模式，是否多语句模式. 单语句模式自动提交
-
-  bool sql_debug_ = false;  ///< 是否输出SQL调试信息
-
-  // 是否使用了 `chunk_iterator` 模式。 只有在设置了 `chunk_iterator`
-  // 并且可以生成相关物理执行计划时才会使用 `chunk_iterator` 模式。
-  bool used_chunk_mode_ = false;
-
-  ExecutionMode execution_mode_ = ExecutionMode::TUPLE_ITERATOR;
+  bool sql_debug_ = false;                 ///< 是否输出SQL调试信息
 };

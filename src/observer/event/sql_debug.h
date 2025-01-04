@@ -14,8 +14,8 @@ See the Mulan PSL v2 for more details. */
 
 #pragma once
 
-#include "common/lang/string.h"
-#include "common/lang/list.h"
+#include <list>
+#include <string>
 
 /**
  * @brief SQL调试信息
@@ -27,16 +27,16 @@ See the Mulan PSL v2 for more details. */
 class SqlDebug
 {
 public:
-  SqlDebug()          = default;
+  SqlDebug() = default;
   virtual ~SqlDebug() = default;
 
-  void add_debug_info(const string &debug_info);
+  void add_debug_info(const std::string &debug_info);
   void clear_debug_info();
 
-  const list<string> &get_debug_infos() const;
+  const std::list<std::string> &get_debug_infos() const;
 
 private:
-  list<string> debug_infos_;
+  std::list<std::string> debug_infos_;
 };
 
 /**

@@ -21,10 +21,15 @@ See the Mulan PSL v2 for more details. */
 #include "common/io/io.h"
 #include "common/lang/string.h"
 #include "common/log/log.h"
-#include "event/session_event.h"
-#include "event/sql_event.h"
+#include "session/session.h"
+#include "sql/expr/expression.h"
 #include "sql/operator/logical_operator.h"
+#include "sql/executor/sql_result.h"
+#include "sql/stmt/create_view_stmt.h"
 #include "sql/stmt/stmt.h"
+#include "event/sql_event.h"
+#include "event/session_event.h"
+#include "storage/db/db.h"
 
 using namespace std;
 using namespace common;
@@ -33,15 +38,22 @@ RC OptimizeStage::handle_request(SQLStageEvent *sql_event)
 {
   unique_ptr<LogicalOperator> logical_operator;
 
+  // // 如果是创建视图, 再创建一份逻辑算子保存在sql_event中, 执行阶段会放进视图Table中
+  // if (sql_event->sql_node()->flag == SCF_CREATE_VIEW) {
+  //   unique_ptr<LogicalOperator> view_logical_operator;
+  //   Stmt *view_stmt = sql_event->view_stmt();
+  //   logical_plan_generator_.create(view_stmt, view_logical_operator);
+  //   sql_event->set_logical_operator(std::move(view_logical_operator));
+  //   delete view_stmt;
+  // }
+
   RC rc = create_logical_plan(sql_event, logical_operator);
   if (rc != RC::SUCCESS) {
-    if (rc != RC::UNIMPLEMENTED) {
+    if (rc != RC::UNIMPLENMENT) {
       LOG_WARN("failed to create logical plan. rc=%s", strrc(rc));
     }
     return rc;
   }
-
-  ASSERT(logical_operator, "logical operator is null");
 
   rc = rewrite(logical_operator);
   if (rc != RC::SUCCESS) {
@@ -56,7 +68,7 @@ RC OptimizeStage::handle_request(SQLStageEvent *sql_event)
   }
 
   unique_ptr<PhysicalOperator> physical_operator;
-  rc = generate_physical_plan(logical_operator, physical_operator, sql_event->session_event()->session());
+  rc = generate_physical_plan(logical_operator, physical_operator);
   if (rc != RC::SUCCESS) {
     LOG_WARN("failed to generate physical plan. rc=%s", strrc(rc));
     return rc;
@@ -74,18 +86,10 @@ RC OptimizeStage::optimize(unique_ptr<LogicalOperator> &oper)
 }
 
 RC OptimizeStage::generate_physical_plan(
-    unique_ptr<LogicalOperator> &logical_operator, unique_ptr<PhysicalOperator> &physical_operator, Session *session)
+    unique_ptr<LogicalOperator> &logical_operator, unique_ptr<PhysicalOperator> &physical_operator)
 {
   RC rc = RC::SUCCESS;
-  if (session->get_execution_mode() == ExecutionMode::CHUNK_ITERATOR && LogicalOperator::can_generate_vectorized_operator(logical_operator->type())) {
-    LOG_INFO("use chunk iterator");
-    session->set_used_chunk_mode(true);
-    rc    = physical_plan_generator_.create_vec(*logical_operator, physical_operator);
-  } else {
-    LOG_INFO("use tuple iterator");
-    session->set_used_chunk_mode(false);
-    rc = physical_plan_generator_.create(*logical_operator, physical_operator);
-  }
+  rc = physical_plan_generator_.create(*logical_operator, physical_operator);
   if (rc != RC::SUCCESS) {
     LOG_WARN("failed to create physical operator. rc=%s", strrc(rc));
   }
@@ -99,7 +103,7 @@ RC OptimizeStage::rewrite(unique_ptr<LogicalOperator> &logical_operator)
   bool change_made = false;
   do {
     change_made = false;
-    rc          = rewriter_.rewrite(logical_operator, change_made);
+    rc = rewriter_.rewrite(logical_operator, change_made);
     if (rc != RC::SUCCESS) {
       LOG_WARN("failed to do expression rewrite on logical plan. rc=%s", strrc(rc));
       return rc;
@@ -113,7 +117,7 @@ RC OptimizeStage::create_logical_plan(SQLStageEvent *sql_event, unique_ptr<Logic
 {
   Stmt *stmt = sql_event->stmt();
   if (nullptr == stmt) {
-    return RC::UNIMPLEMENTED;
+    return RC::UNIMPLENMENT;
   }
 
   return logical_plan_generator_.create(stmt, logical_operator);

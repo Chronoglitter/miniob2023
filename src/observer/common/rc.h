@@ -22,18 +22,20 @@ See the Mulan PSL v2 for more details. */
 #define DEFINE_RCS                       \
   DEFINE_RC(SUCCESS)                     \
   DEFINE_RC(INVALID_ARGUMENT)            \
-  DEFINE_RC(UNIMPLEMENTED)               \
+  DEFINE_RC(UNIMPLENMENT)                \
   DEFINE_RC(SQL_SYNTAX)                  \
+  DEFINE_RC(TOO_MANY_ROW)                \
+  DEFINE_RC(TOO_MANY_COLS)               \
   DEFINE_RC(INTERNAL)                    \
+  DEFINE_RC(NOT_MATCH)                   \
   DEFINE_RC(NOMEM)                       \
+  DEFINE_RC(NOT_IMPLEMENT)               \
   DEFINE_RC(NOTFOUND)                    \
   DEFINE_RC(EMPTY)                       \
-  DEFINE_RC(FULL)                        \
-  DEFINE_RC(EXIST)                       \
-  DEFINE_RC(NOT_EXIST)                   \
   DEFINE_RC(BUFFERPOOL_OPEN)             \
   DEFINE_RC(BUFFERPOOL_NOBUF)            \
   DEFINE_RC(BUFFERPOOL_INVALID_PAGE_NUM) \
+  DEFINE_RC(PARAM_ERROR)                 \
   DEFINE_RC(RECORD_OPENNED)              \
   DEFINE_RC(RECORD_INVALID_RID)          \
   DEFINE_RC(RECORD_INVALID_KEY)          \
@@ -42,7 +44,6 @@ See the Mulan PSL v2 for more details. */
   DEFINE_RC(RECORD_EOF)                  \
   DEFINE_RC(RECORD_NOT_EXIST)            \
   DEFINE_RC(RECORD_INVISIBLE)            \
-  DEFINE_RC(RECORD_RECORD_NOT_EXIST)     \
   DEFINE_RC(SCHEMA_DB_EXIST)             \
   DEFINE_RC(SCHEMA_DB_NOT_EXIST)         \
   DEFINE_RC(SCHEMA_DB_NOT_OPENED)        \
@@ -63,6 +64,7 @@ See the Mulan PSL v2 for more details. */
   DEFINE_RC(LOCKED_UNLOCK)               \
   DEFINE_RC(LOCKED_NEED_WAIT)            \
   DEFINE_RC(LOCKED_CONCURRENCY_CONFLICT) \
+  DEFINE_RC(JOIN_ERROR)                  \
   DEFINE_RC(FILE_EXIST)                  \
   DEFINE_RC(FILE_NOT_EXIST)              \
   DEFINE_RC(FILE_NAME)                   \
@@ -72,12 +74,12 @@ See the Mulan PSL v2 for more details. */
   DEFINE_RC(FILE_NOT_OPENED)             \
   DEFINE_RC(FILE_CLOSE)                  \
   DEFINE_RC(FILE_REMOVE)                 \
+  DEFINE_RC(FILE_SEEK)                   \
+  DEFINE_RC(FILE_READ)                   \
+  DEFINE_RC(FILE_WRITE)                  \
   DEFINE_RC(VARIABLE_NOT_EXISTS)         \
   DEFINE_RC(VARIABLE_NOT_VALID)          \
-  DEFINE_RC(LOGBUF_FULL)                 \
-  DEFINE_RC(LOG_FILE_FULL)               \
-  DEFINE_RC(LOG_ENTRY_INVALID)           \
-  DEFINE_RC(UNSUPPORTED)                 
+  DEFINE_RC(LOGBUF_FULL)
 
 enum class RC
 {

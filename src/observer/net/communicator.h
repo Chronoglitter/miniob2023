@@ -14,9 +14,9 @@ See the Mulan PSL v2 for more details. */
 
 #pragma once
 
+#include <string>
+#include <event.h>
 #include "common/rc.h"
-#include "common/lang/string.h"
-#include "common/lang/memory.h"
 
 struct ConnectionContext;
 class SessionEvent;
@@ -36,7 +36,7 @@ class BufferedWriter;
  * @details 在listener接收到一个新的连接(参考 server.cpp::accept), 就创建一个Communicator对象。
  * 并调用init进行初始化。
  * 在server中监听到某个连接有新的消息，就通过Communicator::read_event接收消息。
- * TODO 这里的communicator把协议和通讯方式，放在了一起。plain和mysql都是一种协议，他们的通讯手段都是一样的
+
  */
 class Communicator
 {
@@ -46,7 +46,7 @@ public:
   /**
    * @brief 接收到一个新的连接时，进行初始化
    */
-  virtual RC init(int fd, unique_ptr<Session> session, const string &addr);
+  virtual RC init(int fd, Session *session, const std::string &addr);
 
   /**
    * @brief 监听到有新的数据到达，调用此函数进行接收消息
@@ -66,7 +66,12 @@ public:
   /**
    * @brief 关联的会话信息
    */
-  Session *session() const { return session_.get(); }
+  Session *session() const { return session_; }
+
+  /**
+   * @brief libevent使用的数据，参考server.cpp
+   */
+  struct event &read_event() { return read_event_; }
 
   /**
    * @brief 对端地址
@@ -74,16 +79,12 @@ public:
    */
   const char *addr() const { return addr_.c_str(); }
 
-  /**
-   * @brief 关联的文件描述符
-   */
-  int fd() const { return fd_; }
-
 protected:
-  unique_ptr<Session> session_;
-  string              addr_;
-  BufferedWriter     *writer_ = nullptr;
-  int                 fd_     = -1;
+  Session *session_ = nullptr;
+  struct event read_event_;
+  std::string addr_;
+  BufferedWriter *writer_ = nullptr;
+  int fd_ = -1;
 };
 
 /**
@@ -93,7 +94,7 @@ protected:
 enum class CommunicateProtocol
 {
   PLAIN,  ///< 以'\0'结尾的协议
-  CLI,    ///< 与客户端进行交互的协议。CLI 不应该是一种协议，只是一种通讯的方式而已
+  CLI,    ///< 与客户端进行交互的协议
   MYSQL,  ///< mysql通讯协议。具体实现参考 MysqlCommunicator
 };
 

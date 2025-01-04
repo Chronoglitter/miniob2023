@@ -14,11 +14,11 @@ See the Mulan PSL v2 for more details. */
 
 #pragma once
 
-#include <memory>
 #include <vector>
+#include <memory>
 
-#include "sql/expr/expression.h"
 #include "sql/operator/logical_operator.h"
+#include "sql/expr/expression.h"
 #include "storage/field/field.h"
 
 /**
@@ -29,11 +29,17 @@ See the Mulan PSL v2 for more details. */
 class ProjectLogicalOperator : public LogicalOperator
 {
 public:
-  ProjectLogicalOperator(std::vector<std::unique_ptr<Expression>> &&expressions);
+  ProjectLogicalOperator(std::vector<std::unique_ptr<Expression>> &&projects);
   virtual ~ProjectLogicalOperator() = default;
 
   LogicalOperatorType type() const override { return LogicalOperatorType::PROJECTION; }
 
-  std::vector<std::unique_ptr<Expression>>       &expressions() { return expressions_; }
+  std::vector<std::unique_ptr<Expression>> &expressions() { return expressions_; }
   const std::vector<std::unique_ptr<Expression>> &expressions() const { return expressions_; }
+
+  //! 投影映射的字段名称
+  //! 并不是所有的select都会查看表字段，也可能是常量数字、字符串，
+  //! 或者是执行某个函数。所以这里应该是表达式Expression。
+  // move to physicalplan
+  std::vector<std::unique_ptr<Expression>> projects;
 };

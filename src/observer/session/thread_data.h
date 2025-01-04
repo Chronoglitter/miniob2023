@@ -21,14 +21,14 @@ class ThreadData
 {
 public:
   static ThreadData *current() { return thread_data_; }
-  static void        setup(ThreadData *thread) { thread_data_ = thread; }
+  static void setup(ThreadData *thread) { thread_data_ = thread; }
 
 public:
-  ThreadData()  = default;
+  ThreadData() = default;
   ~ThreadData() = default;
 
   Session *session() const { return session_; }
-  Trx     *trx() const;
+  Trx *trx() const;
 
   void set_session(Session *session) { session_ = session; }
 

@@ -12,45 +12,28 @@ See the Mulan PSL v2 for more details. */
 // Created by Wangyunlai on 2023/06/25.
 //
 
-#include <setjmp.h>
-#include <signal.h>
-
 #include "net/cli_communicator.h"
-#include "common/lang/string.h"
-#include "common/log/log.h"
-#include "common/os/signal.h"
-#include "event/session_event.h"
 #include "net/buffered_writer.h"
-#include "session/session.h"
+#include "common/log/log.h"
+#include "common/lang/string.h"
+#include "event/session_event.h"
 
 #ifdef USE_READLINE
-#include "readline/history.h"
 #include "readline/readline.h"
+#include "readline/history.h"
 #endif
 
-#define MAX_MEM_BUFFER_SIZE 8192
+#define MAX_MEM_BUFFER_SIZE 81920
 #define PORT_DEFAULT 6789
 
 using namespace common;
 
 #ifdef USE_READLINE
-const string HISTORY_FILE            = string(getenv("HOME")) + "/.miniob.history";
-time_t       last_history_write_time = 0;
-sigjmp_buf   ctrlc_buf;
-bool         ctrlc_flag = false;
-
-void handle_signals(int signo) {
-  if (signo == SIGINT) {
-    ctrlc_flag = true;
-    siglongjmp(ctrlc_buf, 1);
-  }
-}
+const std::string HISTORY_FILE = std::string(getenv("HOME")) + "/.miniob.history";
+time_t last_history_write_time = 0;
 
 char *my_readline(const char *prompt)
 {
-  static sighandler_t setup_signal_handler = signal(SIGINT, handle_signals);
-  (void)setup_signal_handler;
-
   int size = history_length;
   if (size == 0) {
     read_history(HISTORY_FILE.c_str());
@@ -59,15 +42,6 @@ char *my_readline(const char *prompt)
     if (fp != nullptr) {
       fclose(fp);
     }
-  }
-
-  while ( sigsetjmp( ctrlc_buf, 1 ) != 0 );
-
-  if (ctrlc_flag) {
-    char *line = (char *)malloc(strlen("exit") + 1);
-    strcpy(line, "exit");
-    printf("\n");
-    return line;
   }
 
   char *line = readline(prompt);
@@ -92,16 +66,10 @@ char *my_readline(const char *prompt)
   fprintf(stdout, "%s", prompt);
   char *s = fgets(buffer, MAX_MEM_BUFFER_SIZE, stdin);
   if (nullptr == s) {
+    free(buffer);
     if (ferror(stdin) || feof(stdin)) {
       LOG_WARN("failed to read line: %s", strerror(errno));
     }
-    /* EINTR(4):Interrupted system call */
-    if (errno == EINTR) {
-      strncpy(buffer, "interrupted", MAX_MEM_BUFFER_SIZE);
-      fprintf(stdout, "\n");
-      return buffer;
-    }
-    free(buffer);
     return nullptr;
   }
   return buffer;
@@ -114,22 +82,24 @@ char *my_readline(const char *prompt)
 */
 bool is_exit_command(const char *cmd)
 {
-  return 0 == strncasecmp("exit", cmd, 4) 
-      || 0 == strncasecmp("bye", cmd, 3) 
-      || 0 == strncasecmp("\\q", cmd, 2)
-      || 0 == strncasecmp("interrupted", cmd, 11);
+  return 0 == strncasecmp("exit", cmd, 4) || 0 == strncasecmp("bye", cmd, 3) || 0 == strncasecmp("\\q", cmd, 2);
 }
 
 char *read_command()
 {
-  const char *prompt_str    = "miniob > ";
-  char       *input_command = my_readline(prompt_str);
+  const char *prompt_str = "miniob > ";
+  char *input_command = nullptr;
+  for (input_command = my_readline(prompt_str); common::is_blank(input_command);
+       input_command = my_readline(prompt_str)) {
+    free(input_command);
+    input_command = nullptr;
+  }
   return input_command;
 }
 
-RC CliCommunicator::init(int fd, unique_ptr<Session> session, const string &addr)
+RC CliCommunicator::init(int fd, Session *session, const std::string &addr)
 {
-  RC rc = PlainCommunicator::init(fd, std::move(session), addr);
+  RC rc = PlainCommunicator::init(fd, session, addr);
   if (OB_FAIL(rc)) {
     LOG_WARN("fail to init communicator", strrc(rc));
     return rc;
@@ -153,25 +123,17 @@ RC CliCommunicator::init(int fd, unique_ptr<Session> session, const string &addr
 
 RC CliCommunicator::read_event(SessionEvent *&event)
 {
-  event         = nullptr;
+  event = nullptr;
   char *command = read_command();
-  if (nullptr == command) {
-    return RC::SUCCESS;
-  }
-
-  if (is_blank(command)) {
-    free(command);
-    return RC::SUCCESS;
-  }
 
   if (is_exit_command(command)) {
     free(command);
-    exit_ = true;
+    event = nullptr;
     return RC::SUCCESS;
   }
 
   event = new SessionEvent(this);
-  event->set_query(string(command));
+  event->set_query(std::string(command));
   free(command);
   return RC::SUCCESS;
 }
@@ -179,7 +141,6 @@ RC CliCommunicator::read_event(SessionEvent *&event)
 RC CliCommunicator::write_result(SessionEvent *event, bool &need_disconnect)
 {
   RC rc = PlainCommunicator::write_result(event, need_disconnect);
-
   need_disconnect = false;
   return rc;
 }

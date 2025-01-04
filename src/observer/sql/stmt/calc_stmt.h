@@ -15,10 +15,11 @@ See the Mulan PSL v2 for more details. */
 #pragma once
 
 #include <vector>
+#include <memory>
 
 #include "common/rc.h"
-#include "sql/expr/expression.h"
 #include "sql/stmt/stmt.h"
+#include "sql/expr/expression.h"
 
 class Db;
 class Table;
@@ -30,17 +31,36 @@ class Table;
 class CalcStmt : public Stmt
 {
 public:
-  CalcStmt()                   = default;
+  CalcStmt() = default;
   virtual ~CalcStmt() override = default;
 
   StmtType type() const override { return StmtType::CALC; }
 
 public:
-  static RC create(CalcSqlNode &calc_sql, Stmt *&stmt)
+  static RC create(ParsedSqlNode &sqlnode, Stmt *&stmt)
   {
-    CalcStmt *calc_stmt     = new CalcStmt();
-    calc_stmt->expressions_ = std::move(calc_sql.expressions);
-    stmt                    = calc_stmt;
+    CalcStmt *calc_stmt = new CalcStmt();
+    if (sqlnode.calc.expressions.size()) {
+      for (Expression *const expr : sqlnode.calc.expressions) {
+        calc_stmt->expressions_.emplace_back(expr);
+      }
+      sqlnode.calc.expressions.clear();
+    } else if (!sqlnode.selection.attributes.empty()) {
+      for (auto& expr: sqlnode.selection.attributes) {
+        Expression* tmp_expr;
+        RC rc = Expression::create_expression(expr, {}, {}, tmp_expr);
+        if (rc != RC::SUCCESS) {
+          return rc;
+        }
+        calc_stmt->expressions_.emplace_back(tmp_expr);
+        if (expr->alias.empty()) {
+          tmp_expr->set_name(expr->name);
+        } else {
+          tmp_expr->set_name(expr->alias);
+        }
+      }
+    }
+    stmt = calc_stmt;
     return RC::SUCCESS;
   }
 

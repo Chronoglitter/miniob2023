@@ -14,15 +14,16 @@ See the Mulan PSL v2 for more details. */
 
 #pragma once
 
-#include "sql/expr/expression_tuple.h"
 #include "sql/operator/physical_operator.h"
+#include "sql/expr/tuple.h"
 
 class CalcPhysicalOperator : public PhysicalOperator
 {
 public:
-  CalcPhysicalOperator(std::vector<std::unique_ptr<Expression>> &&expressions)
-      : expressions_(std::move(expressions)), tuple_(expressions_)
-  {}
+  CalcPhysicalOperator(std::vector<std::unique_ptr<Expression>> &&expressions) : expressions_(std::move(expressions))
+  {
+    tuple_.set_expressions(&expressions_);
+  }
 
   virtual ~CalcPhysicalOperator() = default;
 
@@ -59,16 +60,17 @@ public:
 
   const std::vector<std::unique_ptr<Expression>> &expressions() const { return expressions_; }
 
-  RC tuple_schema(TupleSchema &schema) const override
+  virtual TupleSchema tuple_schema() const override
   {
-    for (const std::unique_ptr<Expression> &expression : expressions_) {
-      schema.append_cell(expression->name());
+    TupleSchema schema;
+    for (const unique_ptr<Expression> &expr : expressions_) {
+      schema.append_cell(expr->name().c_str());
     }
-    return RC::SUCCESS;
+    return schema;
   }
 
 private:
-  std::vector<std::unique_ptr<Expression>>     expressions_;
-  ExpressionTuple<std::unique_ptr<Expression>> tuple_;
-  bool                                         emitted_ = false;
+  std::vector<std::unique_ptr<Expression>> expressions_;
+  ExpressionTuple tuple_;
+  bool emitted_ = false;
 };

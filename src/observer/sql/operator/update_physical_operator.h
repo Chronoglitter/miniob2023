@@ -1,48 +1,33 @@
-/* Copyright (c) 2021 OceanBase and/or its affiliates. All rights reserved.
-miniob is licensed under Mulan PSL v2.
-You can use this software according to the terms and conditions of the Mulan PSL v2.
-You may obtain a copy of Mulan PSL v2 at:
-         http://license.coscl.org.cn/MulanPSL2
-THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
-EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
-MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
-See the Mulan PSL v2 for more details. */
-
-//
-// Created by WangYunlai on 2022/6/27.
-//
-
 #pragma once
-#include<vector>
+
 #include "sql/operator/physical_operator.h"
-#include "sql/parser/parse.h"
+
 class Trx;
-class UpdateStmt;
-/**
- * @brief 物理算子，更新
- * @ingroup PhysicalOperator
- */
+
 class UpdatePhysicalOperator : public PhysicalOperator
 {
 public:
-  UpdatePhysicalOperator(Table *table,std::vector<Value> & values,std::vector<FieldMeta> & fields) : table_(table)
-  ,values_(values),fields_(fields)
-  {}
+  UpdatePhysicalOperator(Table *table, std::vector<std::unique_ptr<Expression>> &&values_exprs,
+      const std::vector<const FieldMeta *> &field_metas);
+
   virtual ~UpdatePhysicalOperator() = default;
-  PhysicalOperatorType type() const override
-  {
-    return PhysicalOperatorType::UPDATE;
-  }
+
+  PhysicalOperatorType type() const override { return PhysicalOperatorType::UPDATE; }
+
   RC open(Trx *trx) override;
   RC next() override;
   RC close() override;
-  Tuple *current_tuple() override
-  {
-    return nullptr;
-  }
+
+  Tuple *current_tuple() override { return nullptr; }
+
 private:
   Table *table_ = nullptr;
-  Trx *trx_ = nullptr;
+  std::vector<std::unique_ptr<Expression>> values_exprs_;
   std::vector<Value> values_;
-  std::vector<FieldMeta> fields_;
+  std::vector<const FieldMeta *> field_metas_;
+  std::vector<int> index_field_metas_;       // 需要修改的字段是第几个, 不考虑系统字段
+
+  bool schema_field_type_mismatch_ = false;  // 是否字段和修改值的类型不一致
+
+  Trx *trx_ = nullptr;
 };

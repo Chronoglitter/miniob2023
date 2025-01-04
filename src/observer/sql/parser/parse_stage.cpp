@@ -24,6 +24,7 @@ See the Mulan PSL v2 for more details. */
 #include "event/session_event.h"
 #include "event/sql_event.h"
 #include "sql/parser/parse.h"
+#include "sql/parser/parse_defs.h"
 
 using namespace common;
 
@@ -31,8 +32,8 @@ RC ParseStage::handle_request(SQLStageEvent *sql_event)
 {
   RC rc = RC::SUCCESS;
 
-  SqlResult         *sql_result = sql_event->session_event()->sql_result();
-  const std::string &sql        = sql_event->sql();
+  SqlResult *sql_result = sql_event->session_event()->sql_result();
+  const std::string &sql = sql_event->sql();
 
   ParsedSqlResult parsed_sql_result;
 
@@ -48,6 +49,14 @@ RC ParseStage::handle_request(SQLStageEvent *sql_event)
   }
 
   std::unique_ptr<ParsedSqlNode> sql_node = std::move(parsed_sql_result.sql_nodes().front());
+
+  if (sql_node->flag == SCF_INVALID) {
+    rc = RC::VARIABLE_NOT_VALID;
+    sql_result->set_return_code(rc);
+    // sql_result->set_state_string("Failed to parse sql"); // OUTPUT FAILURE
+    return rc;
+  }
+
   if (sql_node->flag == SCF_ERROR) {
     // set error information to event
     rc = RC::SQL_SYNTAX;
@@ -57,6 +66,16 @@ RC ParseStage::handle_request(SQLStageEvent *sql_event)
   }
 
   sql_event->set_sql_node(std::move(sql_node));
+
+  // // 如果是创建视图, 再创建一份保存在sql_event中, 为了拿到自己资源的逻辑算子
+  // if (sql_event->sql_node()->flag == SCF_CREATE_VIEW) {
+  //   ParsedSqlResult parsed_sql_result;
+
+  //   parse(sql.c_str(), &parsed_sql_result);
+  //   unique_ptr<LogicalOperator> view_logical_operator;
+  //   std::unique_ptr<ParsedSqlNode> sql_node = std::move(parsed_sql_result.sql_nodes().front());
+  //   sql_event->set_view_sql_node(std::move(sql_node));
+  // }
 
   return RC::SUCCESS;
 }

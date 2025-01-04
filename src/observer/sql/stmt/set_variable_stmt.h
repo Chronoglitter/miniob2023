@@ -31,7 +31,7 @@ public:
 
   StmtType type() const override { return StmtType::SET_VARIABLE; }
 
-  const char  *var_name() const { return set_variable_.name.c_str(); }
+  const char *var_name() const { return set_variable_.name.c_str(); }
   const Value &var_value() const { return set_variable_.value; }
 
   static RC create(const SetVariableSqlNode &set_variable, Stmt *&stmt)

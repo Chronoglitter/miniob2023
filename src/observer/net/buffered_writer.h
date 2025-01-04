@@ -57,6 +57,11 @@ public:
    */
   RC flush();
 
+  /**
+   * @description: 清空缓存
+   */
+  void clear() { buffer_.clear(); }
+
 private:
   /**
    * @brief 刷新缓存
@@ -67,6 +72,6 @@ private:
   RC flush_internal(int32_t size);
 
 private:
-  int        fd_ = -1;
+  int fd_ = -1;
   RingBuffer buffer_;
 };

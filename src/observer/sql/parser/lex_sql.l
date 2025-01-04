@@ -77,19 +77,22 @@ QUOTE            [\'\"]
 {WHITE_SAPCE}                                        // ignore whitespace
 \n                                                   ;
 
-[\-]?{DIGIT}+                           yylval->number=atoi(yytext); RETURN_TOKEN(NUMBER);
-[\-]?{DIGIT}+{DOT}{DIGIT}+              yylval->floats=(float)(atof(yytext)); RETURN_TOKEN(FLOAT);
+{DIGIT}+                           yylval->number=atoi(yytext); RETURN_TOKEN(NUMBER);
+{DIGIT}+{DOT}{DIGIT}+              yylval->floats=(float)(atof(yytext)); RETURN_TOKEN(FLOAT);
 
 ";"                                     RETURN_TOKEN(SEMICOLON);
 {DOT}                                   RETURN_TOKEN(DOT);
 EXIT                                    RETURN_TOKEN(EXIT);
 HELP                                    RETURN_TOKEN(HELP);
 DESC                                    RETURN_TOKEN(DESC);
+ASC                                     RETURN_TOKEN(ASC);
 CREATE                                  RETURN_TOKEN(CREATE);
 DROP                                    RETURN_TOKEN(DROP);
 TABLE                                   RETURN_TOKEN(TABLE);
 TABLES                                  RETURN_TOKEN(TABLES);
+VIEW                                    RETURN_TOKEN(VIEW);
 INDEX                                   RETURN_TOKEN(INDEX);
+UNIQUE                                  RETURN_TOKEN(UNIQUE);
 ON                                      RETURN_TOKEN(ON);
 SHOW                                    RETURN_TOKEN(SHOW);
 SYNC                                    RETURN_TOKEN(SYNC);
@@ -97,9 +100,8 @@ SELECT                                  RETURN_TOKEN(SELECT);
 CALC                                    RETURN_TOKEN(CALC);
 FROM                                    RETURN_TOKEN(FROM);
 WHERE                                   RETURN_TOKEN(WHERE);
-NOT                                     RETURN_TOKEN(NOT);
-LIKE                                    RETURN_TOKEN(LK);
 AND                                     RETURN_TOKEN(AND);
+OR                                      RETURN_TOKEN(OR);
 INSERT                                  RETURN_TOKEN(INSERT);
 INTO                                    RETURN_TOKEN(INTO);
 VALUES                                  RETURN_TOKEN(VALUES);
@@ -111,17 +113,37 @@ COMMIT                                  RETURN_TOKEN(TRX_COMMIT);
 ROLLBACK                                RETURN_TOKEN(TRX_ROLLBACK);
 INT                                     RETURN_TOKEN(INT_T);
 CHAR                                    RETURN_TOKEN(STRING_T);
-DATE                                    RETURN_TOKEN(DATE_T);
+TEXT                                    RETURN_TOKEN(TEXT_T);
 FLOAT                                   RETURN_TOKEN(FLOAT_T);
+DATE                                    RETURN_TOKEN(DATE_T);
+NULL                                    RETURN_TOKEN(NULL_T);
 LOAD                                    RETURN_TOKEN(LOAD);
 DATA                                    RETURN_TOKEN(DATA);
 INFILE                                  RETURN_TOKEN(INFILE);
 EXPLAIN                                 RETURN_TOKEN(EXPLAIN);
+MAX                                     RETURN_TOKEN(AGGR_MAX);
+MIN                                     RETURN_TOKEN(AGGR_MIN);
+SUM                                     RETURN_TOKEN(AGGR_SUM);
+AVG                                     RETURN_TOKEN(AGGR_AVG);
+COUNT                                   RETURN_TOKEN(AGGR_COUNT);
+LENGTH                                  RETURN_TOKEN(LENGTH);
+ROUND                                   RETURN_TOKEN(ROUND);
+DATE_FORMAT                             RETURN_TOKEN(DATE_FORMAT);
+INNER                                   RETURN_TOKEN(INNER);
+JOIN                                    RETURN_TOKEN(JOIN);
+LIKE                                    RETURN_TOKEN(LIKE);
+EXISTS                                  RETURN_TOKEN(EXISTS);
+IN                                      RETURN_TOKEN(IN);
+IS                                      RETURN_TOKEN(IS);
+AS                                      RETURN_TOKEN(AS);
+DEFAULT                                 RETURN_TOKEN(DEFAULT);
+NOT                                     RETURN_TOKEN(NOT);
+ORDER                                   RETURN_TOKEN(ORDER);
 GROUP                                   RETURN_TOKEN(GROUP);
 BY                                      RETURN_TOKEN(BY);
-STORAGE                                 RETURN_TOKEN(STORAGE);
-FORMAT                                  RETURN_TOKEN(FORMAT);
+HAVING                                  RETURN_TOKEN(HAVING);
 {ID}                                    yylval->string=strdup(yytext); RETURN_TOKEN(ID);
+
 "("                                     RETURN_TOKEN(LBRACE);
 ")"                                     RETURN_TOKEN(RBRACE);
 
@@ -134,14 +156,15 @@ FORMAT                                  RETURN_TOKEN(FORMAT);
 ">="                                    RETURN_TOKEN(GE);
 ">"                                     RETURN_TOKEN(GT);
 
-"+" |
-"-" |
-"*" |
-"/"                                     { return yytext[0]; }
-\"[^"]*\"                               yylval->string = strdup(yytext); RETURN_TOKEN(SSS);
-'[^']*\'                                yylval->string = strdup(yytext); RETURN_TOKEN(SSS);
+"+"                                                               |
+"-"                                                               |
+"*"                                                               |
+"/"                                                               { return yytext[0]; }
+{QUOTE}([0-9]{4})\-([0-9]{1,2})\-([0-9]{1,2}){QUOTE}              yylval->string = strdup(yytext); RETURN_TOKEN(DATE);
+\"[^"]*\"                                                         yylval->string = strdup(yytext); RETURN_TOKEN(SSS);
+'[^']*\'                                                          yylval->string = strdup(yytext); RETURN_TOKEN(SSS);
 
-.                                       LOG_DEBUG("Unknown character [%c]",yytext[0]); return yytext[0];
+.                                                                 LOG_DEBUG("Unknown character [%c]",yytext[0]); return yytext[0];
 %%
 
 void scan_string(const char *str, yyscan_t scanner) {

@@ -23,27 +23,26 @@ See the Mulan PSL v2 for more details. */
 #include <sys/time.h>
 #include <sys/types.h>
 #include <sys/un.h>
+#include <unistd.h>
 #include <termios.h>
 #include <time.h>
-#include <unistd.h>
 
 #include "common/defs.h"
 #include "common/lang/string.h"
 
 #ifdef USE_READLINE
-#include "readline/history.h"
 #include "readline/readline.h"
+#include "readline/history.h"
 #endif
 
-#define MAX_MEM_BUFFER_SIZE 8192
+#define MAX_MEM_BUFFER_SIZE 81920
 #define PORT_DEFAULT 6789
 
-using namespace std;
 using namespace common;
 
 #ifdef USE_READLINE
-const string HISTORY_FILE            = string(getenv("HOME")) + "/.miniob.history";
-time_t       last_history_write_time = 0;
+const std::string HISTORY_FILE = std::string(getenv("HOME")) + "/.miniob.history";
+time_t last_history_write_time = 0;
 
 char *my_readline(const char *prompt)
 {
@@ -119,7 +118,7 @@ int init_unix_sock(const char *unix_sock_path)
 
 int init_tcp_sock(const char *server_host, int server_port)
 {
-  struct hostent    *host;
+  struct hostent *host;
   struct sockaddr_in serv_addr;
 
   if ((host = gethostbyname(server_host)) == NULL) {
@@ -134,8 +133,8 @@ int init_tcp_sock(const char *server_host, int server_port)
   }
 
   serv_addr.sin_family = AF_INET;
-  serv_addr.sin_port   = htons(server_port);
-  serv_addr.sin_addr   = *((struct in_addr *)host->h_addr);
+  serv_addr.sin_port = htons(server_port);
+  serv_addr.sin_addr = *((struct in_addr *)host->h_addr);
   bzero(&(serv_addr.sin_zero), 8);
 
   if (connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(struct sockaddr)) == -1) {
@@ -146,24 +145,12 @@ int init_tcp_sock(const char *server_host, int server_port)
   return sockfd;
 }
 
-const char *startup_tips = R"(
-Welcome to the OceanBase database implementation course.
-
-Copyright (c) 2021 OceanBase and/or its affiliates.
-
-Learn more about OceanBase at https://github.com/oceanbase/oceanbase
-Learn more about MiniOB at https://github.com/oceanbase/miniob
-
-)";
-
 int main(int argc, char *argv[])
 {
-  printf("%s", startup_tips);
-
-  const char  *unix_socket_path = nullptr;
-  const char  *server_host      = "127.0.0.1";
-  int          server_port      = PORT_DEFAULT;
-  int          opt;
+  const char *unix_socket_path = nullptr;
+  const char *server_host = "127.0.0.1";
+  int server_port = PORT_DEFAULT;
+  int opt;
   extern char *optarg;
   while ((opt = getopt(argc, argv, "s:h:p:")) > 0) {
     switch (opt) {
@@ -192,13 +179,11 @@ int main(int argc, char *argv[])
   while ((input_command = my_readline(prompt_str)) != nullptr) {
     if (common::is_blank(input_command)) {
       free(input_command);
-      input_command = nullptr;
       continue;
     }
 
     if (is_exit_command(input_command)) {
       free(input_command);
-      input_command = nullptr;
       break;
     }
 
@@ -207,8 +192,6 @@ int main(int argc, char *argv[])
       exit(1);
     }
     free(input_command);
-    input_command = nullptr;
-
     memset(send_buf, 0, sizeof(send_buf));
 
     int len = 0;
@@ -235,11 +218,6 @@ int main(int argc, char *argv[])
       printf("Connection has been closed\n");
       break;
     }
-  }
-
-  if (input_command != nullptr) {
-    free(input_command);
-    input_command = nullptr;
   }
   close(sockfd);
 

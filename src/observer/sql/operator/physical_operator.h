@@ -14,9 +14,9 @@ See the Mulan PSL v2 for more details. */
 
 #pragma once
 
+#include <vector>
 #include <memory>
 #include <string>
-#include <vector>
 
 #include "common/rc.h"
 #include "sql/expr/tuple.h"
@@ -38,24 +38,21 @@ class Trx;
 enum class PhysicalOperatorType
 {
   TABLE_SCAN,
-  TABLE_SCAN_VEC,
   INDEX_SCAN,
+  VIEW_SCAN,
   NESTED_LOOP_JOIN,
+  HASH_JOIN,
   EXPLAIN,
   PREDICATE,
-  PREDICATE_VEC,
   PROJECT,
-  PROJECT_VEC,
+  AGGREGATION,
+  GROUPBY,
+  ORDERBY,
   CALC,
   STRING_LIST,
   DELETE,
   INSERT,
   UPDATE,
-  SCALAR_GROUP_BY,
-  HASH_GROUP_BY,
-  GROUP_BY_VEC,
-  AGGREGATE_VEC,
-  EXPR_VEC,
 };
 
 /**
@@ -67,7 +64,7 @@ class PhysicalOperator
 public:
   PhysicalOperator() = default;
 
-  virtual ~PhysicalOperator() = default;
+  virtual ~PhysicalOperator();
 
   /**
    * 这两个函数是为了打印时使用的，比如在explain中
@@ -78,18 +75,34 @@ public:
   virtual PhysicalOperatorType type() const = 0;
 
   virtual RC open(Trx *trx) = 0;
-  virtual RC next() { return RC::UNIMPLEMENTED; }
-  virtual RC next(Chunk &chunk) { return RC::UNIMPLEMENTED; }
+  virtual RC next() = 0;
   virtual RC close() = 0;
 
-  virtual Tuple *current_tuple() { return nullptr; }
+  virtual Tuple *current_tuple() = 0;
 
-  virtual RC tuple_schema(TupleSchema &schema) const { return RC::UNIMPLEMENTED; }
+  // 获取当前tuple的schema
+  virtual TupleSchema tuple_schema() const
+  {
+    TupleSchema empty_schema;
+    return empty_schema;
+  }
 
   void add_child(std::unique_ptr<PhysicalOperator> oper) { children_.emplace_back(std::move(oper)); }
 
   std::vector<std::unique_ptr<PhysicalOperator>> &children() { return children_; }
 
+  void set_sub_query(const std::shared_ptr<Tuple> &tuple)
+  {
+    parent_tuple_ = tuple;
+    for (const auto &child : children_) {
+      child->set_sub_query(tuple);
+    }
+  }
+
+  virtual Tuple *parrent_tuple() { return parent_tuple_.get(); }
+
 protected:
   std::vector<std::unique_ptr<PhysicalOperator>> children_;
+  // for sub query
+  std::shared_ptr<Tuple> parent_tuple_;
 };

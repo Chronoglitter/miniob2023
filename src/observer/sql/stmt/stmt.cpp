@@ -12,40 +12,29 @@ See the Mulan PSL v2 for more details. */
 // Created by Wangyunlai on 2022/5/22.
 //
 
-#include "sql/stmt/stmt.h"
 #include "common/log/log.h"
-#include "sql/stmt/calc_stmt.h"
+#include "sql/parser/parse_defs.h"
+#include "sql/stmt/create_table_select_stmt.h"
+#include "sql/stmt/create_view_stmt.h"
+#include "sql/stmt/stmt.h"
+#include "sql/stmt/insert_stmt.h"
+#include "sql/stmt/delete_stmt.h"
+#include "sql/stmt/select_stmt.h"
+#include "sql/stmt/update_stmt.h"
+#include "sql/stmt/explain_stmt.h"
 #include "sql/stmt/create_index_stmt.h"
 #include "sql/stmt/create_table_stmt.h"
 #include "sql/stmt/drop_table_stmt.h"
-#include "sql/stmt/delete_stmt.h"
-#include "sql/stmt/update_stmt.h"
 #include "sql/stmt/desc_table_stmt.h"
-#include "sql/stmt/exit_stmt.h"
-#include "sql/stmt/explain_stmt.h"
 #include "sql/stmt/help_stmt.h"
-#include "sql/stmt/insert_stmt.h"
-#include "sql/stmt/load_data_stmt.h"
-#include "sql/stmt/select_stmt.h"
-#include "sql/stmt/set_variable_stmt.h"
 #include "sql/stmt/show_tables_stmt.h"
 #include "sql/stmt/trx_begin_stmt.h"
 #include "sql/stmt/trx_end_stmt.h"
+#include "sql/stmt/exit_stmt.h"
+#include "sql/stmt/set_variable_stmt.h"
+#include "sql/stmt/load_data_stmt.h"
+#include "sql/stmt/calc_stmt.h"
 
-bool stmt_type_ddl(StmtType type)
-{
-  switch (type) {
-    case StmtType::CREATE_TABLE:
-    case StmtType::DROP_TABLE:
-    case StmtType::DROP_INDEX:
-    case StmtType::CREATE_INDEX: {
-      return true;
-    }
-    default: {
-      return false;
-    }
-  }
-}
 RC Stmt::create_stmt(Db *db, ParsedSqlNode &sql_node, Stmt *&stmt)
 {
   stmt = nullptr;
@@ -58,13 +47,11 @@ RC Stmt::create_stmt(Db *db, ParsedSqlNode &sql_node, Stmt *&stmt)
       return DeleteStmt::create(db, sql_node.deletion, stmt);
     }
     case SCF_SELECT: {
-      return SelectStmt::create(db, sql_node.selection, stmt);
+      return SelectStmt::create(db, sql_node.selection, {}, stmt);
     }
-
-     case SCF_UPDATE:{
+    case SCF_UPDATE: {
       return UpdateStmt::create(db, sql_node.update, stmt);
     }
-
 
     case SCF_EXPLAIN: {
       return ExplainStmt::create(db, sql_node.explain, stmt);
@@ -76,6 +63,14 @@ RC Stmt::create_stmt(Db *db, ParsedSqlNode &sql_node, Stmt *&stmt)
 
     case SCF_CREATE_TABLE: {
       return CreateTableStmt::create(db, sql_node.create_table, stmt);
+    }
+
+    case SCF_CREATE_TABLE_SELECT: {
+      return CreateTableSelectStmt::create(db, sql_node.create_table_select, stmt);
+    }
+
+    case SCF_CREATE_VIEW: {
+      return CreateViewStmt::create(db, sql_node.create_view, stmt);
     }
 
     case SCF_DROP_TABLE: {
@@ -116,12 +111,12 @@ RC Stmt::create_stmt(Db *db, ParsedSqlNode &sql_node, Stmt *&stmt)
     }
 
     case SCF_CALC: {
-      return CalcStmt::create(sql_node.calc, stmt);
+      return CalcStmt::create(sql_node, stmt);
     }
 
     default: {
       LOG_INFO("Command::type %d doesn't need to create statement.", sql_node.flag);
     } break;
   }
-  return RC::UNIMPLEMENTED;
+  return RC::UNIMPLENMENT;
 }

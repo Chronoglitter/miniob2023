@@ -18,8 +18,8 @@ See the Mulan PSL v2 for more details. */
 #include <vector>
 
 #include "common/rc.h"
-#include "storage/field/field_meta.h"
 #include "storage/index/index_meta.h"
+#include "storage/field/field_meta.h"
 #include "storage/record/record_manager.h"
 
 class IndexScanner;
@@ -37,9 +37,8 @@ class IndexScanner;
 class Index
 {
 public:
-  Index()          = default;
+  Index() = default;
   virtual ~Index() = default;
-  virtual void destroy() = 0;
 
   const IndexMeta &index_meta() const { return index_meta_; }
 
@@ -79,11 +78,12 @@ public:
   virtual RC sync() = 0;
 
 protected:
-  RC init(const IndexMeta &index_meta, const FieldMeta &field_meta);
+  RC init(const IndexMeta &index_meta, const std::vector<FieldMeta> &field_metas);
 
 protected:
   IndexMeta index_meta_;  ///< 索引的元数据
-  FieldMeta field_meta_;  ///< 当前实现仅考虑一个字段的索引
+  // 字段存在顺序, 最后一个放的是bitmap的元数据
+  std::vector<FieldMeta> field_metas_;  ///< multi-index
 };
 
 /**
@@ -93,7 +93,7 @@ protected:
 class IndexScanner
 {
 public:
-  IndexScanner()          = default;
+  IndexScanner() = default;
   virtual ~IndexScanner() = default;
 
   /**
@@ -101,5 +101,5 @@ public:
    * 如果没有更多的元素，返回RECORD_EOF
    */
   virtual RC next_entry(RID *rid) = 0;
-  virtual RC destroy()            = 0;
+  virtual RC destroy() = 0;
 };
