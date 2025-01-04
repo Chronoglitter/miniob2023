@@ -27,6 +27,9 @@ public:
   void set_bit(int index);
   void clear_bit(int index);
 
+  char *get_bitmap() const { return bitmap_; }
+  int get_size() const { return size_; }
+
   /**
    * @param start 从哪个位开始查找，start是包含在内的
    */
@@ -35,7 +38,7 @@ public:
 
 private:
   char *bitmap_;
-  int   size_;
+  int size_;
 };
 
 }  // namespace common
